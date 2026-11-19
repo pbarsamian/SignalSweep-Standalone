@@ -1,5 +1,11 @@
 # Changelog
 
+## v3.21-c6a — Phase 2: C6 environment scaffold and bring-up (in progress, gate pending)
+- `c6_common`, `c6bringup` and `c6touch` (scaffold, not buildable until Phase 3/4) environments. pioarduino 55.03.312-1 pinned. `default_envs = cyd`.
+- C6 board layer: `board_c6_touch147.h`, `lgfx_c6.h` (LovyanGFX panel with Waveshare's init list), `touch_axs5106l.h`.
+- `bringup/c6_bringup.cpp` bring-up sketch 0.2. Results: `docs/port/BRINGUP_RESULTS.md`. Display decision: `docs/port/DISPLAY_DECISION.md`.
+- The `cyd` firmware is unchanged from v3.21-hal1.
+
 ## v3.21-hal1 — Phase 1: HAL split, no CYD behavior change
 - Hardware moved behind `src/hal/` interfaces with a compile-time board layer: `src/boards/cyd/` (display, touch, alert output, pins) and an empty `src/boards/c6_touch147/`.
 - `main.cpp` and the scanners no longer reference pins, TFT_eSPI, LEDC or the touch driver. `ui.cpp` no longer touches pins or LEDC.
