@@ -322,6 +322,8 @@ Additional splits Phase 1 needs, found by the audit:
 - **D3 (was Q4) Drop the unused `XPT2046_Touchscreen` library.**
 - **D4 SD features come from the post-3.21 CYD work.** See `SD_BORROW.md`. Implemented in Phase 5.
 - **D5 Toolchain for the C6** follows the manifest: pioarduino, pinned exactly, verified from its docs in Phase 2.
+- **D6 No detailed spectrum scope on the C6.** A simpler visual activity indicator instead; the screen area goes to detections. See `UI_CUTS.md`.
+- **D7 Swipe left/right between screens on the C6** instead of a tab bar. See `UI_CUTS.md`. The CYD keeps its tab bar.
 
 ## 6. Open questions for Paul
 
