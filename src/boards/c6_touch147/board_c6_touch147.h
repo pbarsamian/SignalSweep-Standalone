@@ -40,7 +40,7 @@ typedef c6::LGFX Display;   // the drawing object type the UI uses (hal/display.
 // the bring-up's guided 5-point test at rotation 1: screen X = raw Y, screen Y = raw X, neither inverted.
 // Fitted over four guided runs plus a verification set (docs/port/BRINGUP_RESULTS.md):
 //   screenX = TOUCH_SX_A * rawY + TOUCH_SX_B,   screenY = TOUCH_SY_A * rawX + TOUCH_SY_B   (then clamp to the screen)
-// Expect about +-5 px in X and +-10 px in Y. X is stable; Y is noisier and carries a ~1 mm bias (parallax suspected).
+// Expect about +-5 px in X and +-10 px in Y. X is stable; Y is noisier and carries a ~1 mm bias (finger placement suspected). All runs were fingers.
 #define TOUCH_SWAP_XY  1
 #define TOUCH_INVERT_X 0
 #define TOUCH_INVERT_Y 0

@@ -45,7 +45,7 @@ direction and orientation: Paul confirmed on the second run that orientation and
 | lower-left | 40,141 | 139,43 |
 | centre | 160,86 | 99,181 |
 
-Second run (Paul used a fingernail or stylus tip):
+Second run (every run in this section was a finger touch; Paul reports that none of his styluses register on this capacitive panel):
 
 | Target | Screen | Raw x, y (run 1) | Raw x, y (run 2) |
 |---|---|---|---|
@@ -61,12 +61,13 @@ Accuracy: the same target moved by up to 24 raw units between the two runs (uppe
 from the targets (up to 31 px in X, 36 px in Y on single taps). The averaged offsets grow from about 0 at the left edge to about +20 at the centre and +27 at the
 right, and are about +17 at the top and 0 at the bottom, but with this run-to-run spread that is not distinguishable from tap placement.
 Scale: 1.47 inch diagonal over a 172x320 grid is about 0.1 mm per pixel (derived from the product's diagonal, not measured), so 30 px is about 3 mm,
-which is ordinary fingertip placement error. (That was the first reading; the stylus runs below superseded the "no correction" conclusion.)
+which is ordinary fingertip placement error. (That was the first reading; the repeated runs below superseded the "no correction" conclusion for the X axis.)
 **Phase 4 consequence:** touch targets should be at least about 50 px (5 mm). The CYD's 34 px tab bar is about 6 mm on its 2.8 inch panel
 but only about 3.4 mm on this one, so the C6 layout needs a taller tab bar.
 
-### Stylus runs and the fitted correction
-Two stylus runs (sketch 0.2 and 0.3) plus the earlier ones gave 4 sets of the same 5 targets. Sketch 0.3 also fitted a scale and offset per axis from
+### Repeated runs and the fitted correction
+(All finger touches. An earlier version of this note called some runs "stylus" in error; no stylus registered on this panel.)
+Four runs (the last on sketch 0.3) gave 4 sets of the same 5 targets. Sketch 0.3 also fitted a scale and offset per axis from
 its 5 taps and then scored it on 5 targets the fit had not seen:
 
 | | mean abs error, X | mean abs error, Y |
@@ -79,8 +80,8 @@ Pooled least-squares over all runs (25 points: 4 x 5 calibration taps and the 5 
 - **X is stable:** the gain was 0.881 to 0.899 across fits of different run subsets, and leaving one run out gave 3.7 to 6.5 px mean error on it.
   So the controller reports about 1.12 raw units per screen pixel along X; the old "no correction" reading was wrong for X.
 - **Y is noisier:** leaving one run out gave 5.6 to 14.1 px. The same crosshair moved by up to 24 raw units between runs, and all five verification taps
-  landed 4 to 17 px above their targets. A consistent offset of about 1 mm (10 px) is what looking at the glass from an angle would cause (parallax through the cover);
-  that is a hypothesis, not tested. The fitted Y constants include that bias.
+  landed 4 to 17 px above their targets. Fingertip placement is the likely cause of the scatter (a finger pad is several millimetres wide, the panel is about 0.1 mm per pixel),
+  and a constant offset could come from how the finger or the viewing angle covers the crosshair; neither is tested. The fitted Y constants include that bias.
 - Applied in `board_c6_touch147.h` as `TOUCH_SX_A/B`, `TOUCH_SY_A/B`. Expect roughly +-5 px in X and +-10 px in Y. With the Phase 4 touch targets of at least 50 px that is
   adequate; a larger sample (or taps made looking straight down at the panel) would tighten Y.
 
