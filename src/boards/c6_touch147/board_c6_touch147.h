@@ -38,11 +38,16 @@ typedef c6::LGFX Display;   // the drawing object type the UI uses (hal/display.
 
 // Touch (AXS5106L reports in the native portrait frame, x 0..171, y 0..319). Measured on hardware 2026-11-19 with
 // the bring-up's guided 5-point test at rotation 1: screen X = raw Y, screen Y = raw X, neither inverted.
-// The residual error of that test was about +-13 px in Y and +-30 px in X; whether that is finger placement or a
-// scale/offset to correct is NOT yet established (see docs/port/BRINGUP_RESULTS.md).
+// Fitted over four guided runs plus a verification set (docs/port/BRINGUP_RESULTS.md):
+//   screenX = TOUCH_SX_A * rawY + TOUCH_SX_B,   screenY = TOUCH_SY_A * rawX + TOUCH_SY_B   (then clamp to the screen)
+// Expect about +-5 px in X and +-10 px in Y. X is stable; Y is noisier and carries a ~1 mm bias (parallax suspected).
 #define TOUCH_SWAP_XY  1
 #define TOUCH_INVERT_X 0
 #define TOUCH_INVERT_Y 0
+#define TOUCH_SX_A  0.894f
+#define TOUCH_SX_B  6.3f
+#define TOUCH_SY_A  1.051f
+#define TOUCH_SY_B -5.0f
 
 #define BOARD_HAS_SPEAKER     0
 #define BOARD_HAS_RGB_LED     0

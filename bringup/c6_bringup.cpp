@@ -16,7 +16,7 @@
 #include "boards/c6_touch147/board_c6_touch147.h"
 #include "boards/c6_touch147/touch_axs5106l.h"
 
-#define FW "c6-bringup 0.2"
+#define FW "c6-bringup 0.3"
 static Display gfx;
 static bool s_wifi = false, s_ble = false;
 
@@ -103,21 +103,38 @@ static void pattern() {
 
 // ---- guided touch calibration: prompts each target on screen, records raw coordinates, derives the axis mapping ----
 struct Tgt { const char* name; int x, y; };
-static Tgt TG[5];
-static int  s_tg = 0;                       // 0..4 = prompting, 5 = mapping derived
-static axs::Point s_rec[5];
+#define N_CAL 5
+#define N_TG  10                            // 5 calibration targets, then 5 verification targets at new positions
+static Tgt TG[N_TG];
+static int  s_tg = 0;                       // 0..4 calibrating, 5..9 verifying, 10 = finished
+static axs::Point s_rec[N_CAL];
 static uint32_t s_last_touch_ms = 0;
-static bool s_map_x_from_rawy = true, s_map_x_inv = false, s_map_y_inv = false;   // derived
+static bool s_map_x_from_rawy = true, s_map_x_inv = false, s_map_y_inv = false;   // derived axis choice
+// Linear fit per screen axis: screen = a*raw + b (least squares over the 5 calibration taps)
+static float s_ax = 1, s_bx = 0, s_ay = 1, s_by = 0;
+static bool  s_fit_ok = false;
+static float s_ver_sum_x = 0, s_ver_sum_y = 0;
 
 static void tg_prompt() {
-  gfx.fillRect(24, 74, W() - 48, 40, TFT_BLACK);
-  if (s_tg < 5) {
-    gfx.setTextColor(TFT_YELLOW, TFT_BLACK);
-    char b[48]; snprintf(b, sizeof(b), "TAP the crosshair: %s", TG[s_tg].name);
+  pattern();                                // clears the previous crosshair
+  if (s_tg < N_TG) {
+    uint16_t c = s_tg < N_CAL ? TFT_YELLOW : TFT_CYAN;
+    gfx.setTextColor(c, TFT_BLACK);
+    char b[48]; snprintf(b, sizeof(b), "%s the crosshair: %s", s_tg < N_CAL ? "TAP" : "VERIFY", TG[s_tg].name);
     gfx.drawString(b, 24, 76);
     int x = TG[s_tg].x, y = TG[s_tg].y;
-    gfx.drawFastHLine(x - 8, y, 17, TFT_YELLOW); gfx.drawFastVLine(x, y - 8, 17, TFT_YELLOW);
+    gfx.drawFastHLine(x - 8, y, 17, c); gfx.drawFastVLine(x, y - 8, 17, c);
   }
+}
+
+static void fit_axis(const float* raw, const float* scr, int n, float& a, float& b) {
+  float mr = 0, ms = 0;
+  for (int i = 0; i < n; i++) { mr += raw[i]; ms += scr[i]; }
+  mr /= n; ms /= n;
+  float num = 0, den = 0;
+  for (int i = 0; i < n; i++) { num += (raw[i] - mr) * (scr[i] - ms); den += (raw[i] - mr) * (raw[i] - mr); }
+  a = den > 0 ? num / den : 1;
+  b = ms - a * mr;
 }
 
 static void tg_done() {
@@ -130,16 +147,29 @@ static void tg_done() {
   Serial.printf("[cal] screen X = %s%s,  screen Y = %s%s   (native raw x:0..171, y:0..319)\n",
                 s_map_x_inv ? "inverted " : "", s_map_x_from_rawy ? "rawY" : "rawX",
                 s_map_y_inv ? "inverted " : "", s_map_x_from_rawy ? "rawX" : "rawY");
-  gfx.fillRect(24, 74, W() - 48, 40, TFT_BLACK);
-  gfx.setTextColor(TFT_GREEN, TFT_BLACK);
-  gfx.drawString("mapping derived - touch to draw dots", 24, 76);
+  // Least-squares scale+offset per axis from the 5 calibration taps (targets are in screen coordinates)
+  float rxa[N_CAL], rya[N_CAL], sxa[N_CAL], sya[N_CAL];
+  for (int i = 0; i < N_CAL; i++) {
+    rxa[i] = s_map_x_from_rawy ? s_rec[i].y : s_rec[i].x;
+    rya[i] = s_map_x_from_rawy ? s_rec[i].x : s_rec[i].y;
+    sxa[i] = TG[i].x; sya[i] = TG[i].y;
+  }
+  fit_axis(rxa, sxa, N_CAL, s_ax, s_bx);
+  fit_axis(rya, sya, N_CAL, s_ay, s_by);
+  s_fit_ok = true;
+  Serial.printf("[cal] fit: screenX = %.3f * raw + %.1f   screenY = %.3f * raw + %.1f\n", s_ax, s_bx, s_ay, s_by);
+  for (int i = 0; i < N_CAL; i++)
+    Serial.printf("[cal] residual after fit %-12s dx=%+.0f dy=%+.0f\n", TG[i].name, s_ax * rxa[i] + s_bx - sxa[i], s_ay * rya[i] + s_by - sya[i]);
+  s_tg = N_CAL;
+  tg_prompt();                              // continue straight into the verification targets
 }
 
 static void map_touch(const axs::Point& p, int& sx, int& sy) {
-  int rx = s_map_x_from_rawy ? p.y : p.x, ry = s_map_x_from_rawy ? p.x : p.y;
+  float rx = s_map_x_from_rawy ? p.y : p.x, ry = s_map_x_from_rawy ? p.x : p.y;
+  if (s_fit_ok) { sx = (int)lroundf(s_ax * rx + s_bx); sy = (int)lroundf(s_ay * ry + s_by); return; }
   int xmax = s_map_x_from_rawy ? 319 : 171, ymax = s_map_x_from_rawy ? 171 : 319;
-  sx = s_map_x_inv ? xmax - rx : rx;
-  sy = s_map_y_inv ? ymax - ry : ry;
+  sx = s_map_x_inv ? xmax - (int)rx : (int)rx;
+  sy = s_map_y_inv ? ymax - (int)ry : (int)ry;
 }
 
 static void touch_show() {
@@ -149,12 +179,27 @@ static void touch_show() {
   bool fresh = now - s_last_touch_ms > 400;           // a new tap, not the repeat frames of a held finger
   s_last_touch_ms = now;
   Serial.printf("[touch] raw=%u,%u%s\n", p[0].x, p[0].y, fresh ? "  (new tap)" : "");
-  if (s_tg < 5) {
+  if (s_tg < N_CAL) {
     if (!fresh) return;
     s_rec[s_tg] = p[0];
     Serial.printf("[cal] %s raw=%u,%u\n", TG[s_tg].name, p[0].x, p[0].y);
     s_tg++;
-    if (s_tg == 5) tg_done(); else tg_prompt();
+    if (s_tg == N_CAL) tg_done(); else tg_prompt();
+    return;
+  }
+  if (s_tg < N_TG) {                        // verification: score the fitted mapping on targets it was not fitted to
+    if (!fresh) return;
+    int mx, my; map_touch(p[0], mx, my);
+    int ex = mx - TG[s_tg].x, ey = my - TG[s_tg].y;
+    Serial.printf("[ver] %-12s target=%d,%d got=%d,%d err=%+d,%+d raw=%u,%u\n", TG[s_tg].name, TG[s_tg].x, TG[s_tg].y, mx, my, ex, ey, p[0].x, p[0].y);
+    s_ver_sum_x += abs(ex); s_ver_sum_y += abs(ey);
+    s_tg++;
+    if (s_tg == N_TG) {
+      Serial.printf("[ver] mean abs error after fit: x=%.1f px  y=%.1f px  (5 targets)\n", s_ver_sum_x / 5, s_ver_sum_y / 5);
+      pattern();
+      gfx.setTextColor(TFT_GREEN, TFT_BLACK);
+      gfx.drawString("done - touch to draw dots", 24, 76);
+    } else tg_prompt();
     return;
   }
   int mx, my; map_touch(p[0], mx, my);
@@ -203,6 +248,9 @@ void setup() {
   // targets sit well inside the corners (the far edges are hard to reach on this small panel)
   TG[0] = {"UPPER-LEFT", 40, 30};  TG[1] = {"UPPER-RIGHT", W() - 41, 30};
   TG[2] = {"LOWER-RIGHT", W() - 41, H() - 31};  TG[3] = {"LOWER-LEFT", 40, H() - 31};  TG[4] = {"CENTRE", W() / 2, H() / 2};
+  // verification targets: new positions the fit never saw (one near the right edge, one near the bottom)
+  TG[5] = {"V-LEFT-UPPER", 100, 60};  TG[6] = {"V-RIGHT-UPPER", 220, 60};
+  TG[7] = {"V-RIGHT-LOWER", 220, 112};  TG[8] = {"V-LEFT-LOWER", 100, 112};  TG[9] = {"V-FAR-RIGHT", 300, 86};
   tg_prompt();
   Serial.println("[ready] commands: h i s w b c r. Follow the on-screen touch prompts.");
 }
@@ -216,7 +264,7 @@ void loop() {
       case 's': sd_list(); pattern(); tg_prompt(); break;
       case 'w': wifi_init(); heap("after wifi_init"); break;
       case 'b': ble_init(); heap("after ble_init"); break;
-      case 'c': pattern(); s_tg = 0; tg_prompt(); break;
+      case 'c': s_tg = 0; s_fit_ok = false; s_ver_sum_x = s_ver_sum_y = 0; tg_prompt(); break;
       case 'r': Serial.println("[reboot]"); delay(100); ESP.restart(); break;
     }
   }

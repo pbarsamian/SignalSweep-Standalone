@@ -39,9 +39,9 @@ hardware reference only and attributed.
 
 ## Status
 
-Offset, colours and inversion are confirmed on hardware (below). Text direction at rotation 1 is not yet confirmed.
+Offset, colours, inversion, orientation and text direction at rotation 1 are confirmed on hardware (below).
 
 ### Bring-up result
 Built and flashed on the board 2026-11-19 (LovyanGFX 1.3.0, Arduino 3.3.12 / IDF 5.5.5). Paul reports the 1-px border complete on all sides
-and the colour bars in order, so the offset, init list, inversion and RGB order are right. Details and the unconfirmed items (text
-orientation, touch scale) are in `docs/port/BRINGUP_RESULTS.md`.
+and the colour bars in order, and the text and orientation are correct, so the offset, init list, inversion and RGB order are right. Touch
+mapping and its fitted correction, and the unconfirmed SD test, are in `docs/port/BRINGUP_RESULTS.md`.

@@ -34,7 +34,7 @@ Found `0x63`, `0x6B`, `0x7E`. `0x63` is the AXS5106L touch controller (its ID re
 ## Display (LovyanGFX 1.3.0 + in-repo panel class, rotation 1, 320x172)
 Reported by Paul from looking at the screen: the 1-px border is complete on all four sides and the colour bars are in the correct order
 (red, green, blue, yellow, cyan, magenta). So the column offset of 34, the init sequence and the inversion setting are right. Text
-direction and orientation (TL top-left, BR bottom-right) were asked for but not reported; not confirmed.
+direction and orientation: Paul confirmed on the second run that orientation and text are correct (readable, not mirrored).
 
 ## Touch (guided 5-point test at rotation 1)
 | Target | Screen | Raw x, y |
@@ -45,13 +45,48 @@ direction and orientation (TL top-left, BR bottom-right) were asked for but not 
 | lower-left | 40,141 | 139,43 |
 | centre | 160,86 | 99,181 |
 
-Derived: **screen X = raw Y, screen Y = raw X, neither inverted.** This is the same as the rotation-1 case in Waveshare's touch library.
-Residual error of the five taps against their targets: about +-13 px in Y and +-30 px in X. NOT established whether this is finger placement or a
-scale or offset to correct. The sketch's free-draw dots can show it; waiting on Paul's report.
+Second run (Paul used a fingernail or stylus tip):
+
+| Target | Screen | Raw x, y (run 1) | Raw x, y (run 2) |
+|---|---|---|---|
+| upper-left | 40,30 | 34,29 | 48,39 |
+| upper-right | 279,30 | 42,306 | 66,310 |
+| lower-right | 279,141 | 147,311 | 137,296 |
+| lower-left | 40,141 | 139,43 | 141,45 |
+| centre | 160,86 | 99,181 | 103,179 |
+
+Derived both times: **screen X = raw Y, screen Y = raw X, neither inverted.** This is the same as the rotation-1 case in Waveshare's touch library.
+
+Accuracy: the same target moved by up to 24 raw units between the two runs (upper-right raw x 42 vs 66), which is as large as the offsets
+from the targets (up to 31 px in X, 36 px in Y on single taps). The averaged offsets grow from about 0 at the left edge to about +20 at the centre and +27 at the
+right, and are about +17 at the top and 0 at the bottom, but with this run-to-run spread that is not distinguishable from tap placement.
+Scale: 1.47 inch diagonal over a 172x320 grid is about 0.1 mm per pixel (derived from the product's diagonal, not measured), so 30 px is about 3 mm,
+which is ordinary fingertip placement error. (That was the first reading; the stylus runs below superseded the "no correction" conclusion.)
+**Phase 4 consequence:** touch targets should be at least about 50 px (5 mm). The CYD's 34 px tab bar is about 6 mm on its 2.8 inch panel
+but only about 3.4 mm on this one, so the C6 layout needs a taller tab bar.
+
+### Stylus runs and the fitted correction
+Two stylus runs (sketch 0.2 and 0.3) plus the earlier ones gave 4 sets of the same 5 targets. Sketch 0.3 also fitted a scale and offset per axis from
+its 5 taps and then scored it on 5 targets the fit had not seen:
+
+| | mean abs error, X | mean abs error, Y |
+|---|---|---|
+| unseen targets, uncorrected (raw as screen) | 15.8 px | 13.2 px |
+| unseen targets, after the 5-point fit | **8.0 px** | **9.2 px** |
+
+Pooled least-squares over all runs (25 points: 4 x 5 calibration taps and the 5 verification taps):
+**screenX = 0.894 x rawY + 6.3**, **screenY = 1.051 x rawX - 5.0**.
+- **X is stable:** the gain was 0.881 to 0.899 across fits of different run subsets, and leaving one run out gave 3.7 to 6.5 px mean error on it.
+  So the controller reports about 1.12 raw units per screen pixel along X; the old "no correction" reading was wrong for X.
+- **Y is noisier:** leaving one run out gave 5.6 to 14.1 px. The same crosshair moved by up to 24 raw units between runs, and all five verification taps
+  landed 4 to 17 px above their targets. A consistent offset of about 1 mm (10 px) is what looking at the glass from an angle would cause (parallax through the cover);
+  that is a hypothesis, not tested. The fitted Y constants include that bias.
+- Applied in `board_c6_touch147.h` as `TOUCH_SX_A/B`, `TOUCH_SY_A/B`. Expect roughly +-5 px in X and +-10 px in Y. With the Phase 4 touch targets of at least 50 px that is
+  adequate; a larger sample (or taps made looking straight down at the panel) would tighten Y.
 
 ## SD / shared bus
-`sd mount FAILED (no card, or not FAT32)`. Whether a card was in the slot was asked and **not answered**, so this is not a result yet. The panel redraw after the
-SD attempt worked (the pattern was shown again), which only shows the failed mount did not break the display.
+`sd mount FAILED (no card, or not FAT32)`. Paul confirmed there is **no card in the slot yet**, so the failure is expected and this is not a result. The panel redraw
+after the SD attempt worked (the pattern was shown again), which only shows an empty-slot mount attempt did not break the display.
 NEEDS HARDWARE TEST with a FAT32 card: mount, listing, and display redraw after real SD traffic.
 
 ## Other findings
