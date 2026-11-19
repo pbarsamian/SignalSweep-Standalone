@@ -1,7 +1,9 @@
-#pragma once
+// SPDX-License-Identifier: GPL-3.0-or-later
+// CYD touch: XPT2046 over VSPI (moved unchanged from include/touch.h; only the linkage changed).
 #include <SPI.h>
 #include <Arduino.h>
-#include "board_pins.h"
+#include "hal/board.h"
+#include "hal/touch.h"
 
 // XPT2046 touch driver — self-contained, no external library needed.
 // Calibration confirmed from working CYD projects.
@@ -9,7 +11,7 @@
 
 static SPIClass touchSPI(VSPI);
 
-static void touch_init() {
+void touch_init() {
     touchSPI.begin(PIN_TOUCH_CLK, PIN_TOUCH_MISO, PIN_TOUCH_MOSI, PIN_TOUCH_CS);
     pinMode(PIN_TOUCH_CS,  OUTPUT); digitalWrite(PIN_TOUCH_CS, HIGH);
     pinMode(PIN_TOUCH_IRQ, INPUT);
@@ -27,7 +29,7 @@ static uint16_t _touch_read_raw(uint8_t cmd) {
 
 // Returns true if screen is being touched, and sets tx/ty to screen coordinates.
 // Landscape orientation: raw X→screen Y (inverted), raw Y→screen X (inverted)
-static bool touch_get(int& tx, int& ty) {
+bool touch_get(int& tx, int& ty) {
     if (digitalRead(PIN_TOUCH_IRQ) != LOW) return false;
 
     int xs = 0, ys = 0;

@@ -1,4 +1,6 @@
 #pragma once
+#include <TFT_eSPI.h>
+typedef TFT_eSPI Display;   // the drawing object type the UI uses (hal/display.h)
 // SignalSweep CYD — board pin definitions
 // Board: ESP32-2432S028R "Cheap Yellow Display"
 // All pins verified from prior project work on this board.
@@ -53,3 +55,14 @@
 #define TONE_BODYCAM  440
 #define TONE_ATTACK  1800
 #define TONE_MS       150
+
+// ── HAL capability flags and task placement (see src/hal/board.h) ─────────────
+#define BOARD_NAME            "cyd"
+#define BOARD_HAS_SPEAKER     1
+#define BOARD_HAS_RGB_LED     1
+#define BOARD_HAS_LDR         1     // wired, but nothing reads it in v3.21
+#define BOARD_HAS_IMU         0
+#define BOARD_HAS_BATTERY_ADC 0
+#define BOARD_HAS_SD          1     // wired, not used by the standalone firmware yet
+#define BOARD_SCAN_TASK_CORE  0
+#define BOARD_UI_TASK_CORE    1

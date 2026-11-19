@@ -312,22 +312,25 @@ Additional splits Phase 1 needs, found by the audit:
 
 ---
 
-## 5. Open questions for Paul
+## 5. Decisions from Paul (2026-11-19)
+
+- **D1 (was Q1) Landscape on the C6.** The C6 UI is **landscape 320x172** (panel rotated), not the manifest's portrait.
+  Consequence: the CYD layout (4 tabs x 80 px, 320-sample scope) carries over with the height reduced from 240 to
+  172 px. Phase 4 is a height rework, not a re-layout. Paul has casing and battery options open. The manifest's
+  portrait skeleton in section 7 is superseded by this. The orientation is the C6 board constant (`SCREEN_W/H`).
+- **D2 (was Q3) Pin the platform.** `cyd` pins `espressif32 @ 6.9.0` (the version that resolved on 2026-11-19).
+- **D3 (was Q4) Drop the unused `XPT2046_Touchscreen` library.**
+- **D4 SD features come from the post-3.21 CYD work.** See `SD_BORROW.md`. Implemented in Phase 5.
+- **D5 Toolchain for the C6** follows the manifest: pioarduino, pinned exactly, verified from its docs in Phase 2.
+
+## 6. Open questions for Paul
 
 Phase 1 is **not blocked** by any of these.
 
-- **Q1. C6 UI orientation.** The manifest says portrait unless you say otherwise. The CYD UI is landscape and the scope is
-  a 320-wide waveform. Do you want portrait with the scope re-laid out, or landscape 320x172 (rotate the panel) so the
-  existing layout carries over with less rework? Decide before Phase 4, not before Phase 1.
 - **Q2. Hunt mode and alerts without audio or LED.** On the C6 the geiger click and LED go. Backlight pulses, a screen
-  flash and the optional GPIO7 buzzer are the plan. Do you want to buy and fit a passive buzzer on GPIO7, or should the
-  design assume none?
-- **Q3. Pin the platform for `cyd`?** The unpinned `platform = espressif32` resolved to arduino-esp32 2.0.17 today and can
-  change under us. Pinning it to the currently resolved version in `platformio.ini` is a `platformio.ini` change but not a
-  behavior change. Should Phase 1 do it, so the regression comparison is stable?
-- **Q4. Remove the unused `XPT2046_Touchscreen` dependency?** It needs a GitHub clone at build time and nothing uses it.
-- **Q5. Display library for the C6** is decided in Phase 2 (`DISPLAY_DECISION.md`), after reading the Waveshare demo and
-  LovyanGFX/Arduino_GFX sources. If neither supports the JD9853, an in-repo driver is the fallback. This will be
-  the largest Phase 2 cost, so it is listed here early. No decision is needed from you now.
+  flash and the optional GPIO7 buzzer are the plan. Do you want to fit a passive buzzer on GPIO7, or should the
+  design assume none? (Needed by Phase 5.)
+- **Q5. Display library for the C6** is decided in Phase 2 (`DISPLAY_DECISION.md`) from the Waveshare demo and the
+  LovyanGFX/Arduino_GFX sources. If neither supports the JD9853, an in-repo driver is the fallback. No decision is needed from you now.
 - **Q6. CI.** Not requested. If other people are to pick this up, a GitHub Actions build of both environments would catch
-  breakage, but the pioarduino fetch has to work from GitHub-hosted runners (it should, and is UNVERIFIED). Say if you want it.
+  breakage. UNVERIFIED that the pioarduino fetch works from GitHub-hosted runners. Say if you want it.

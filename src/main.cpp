@@ -1,6 +1,6 @@
-// SignalSweep CYD v3.21
+// SignalSweep CYD v3.21-hal1
 // Upstream: https://github.com/B0z0dcl0wn/SignalSweep (GPL-3.0)
-// Board: ESP32-2432S028R "Cheap Yellow Display"
+// Board: selected at build time (src/hal/board.h)
 
 #include <Arduino.h>
 #include <freertos/FreeRTOS.h>
@@ -10,7 +10,8 @@
 #include <esp_wifi.h>
 #include <NimBLEDevice.h>
 
-#include "board_pins.h"
+#include "hal/board.h"
+#include "hal/alert_output.h"
 #include "detection.h"
 #include "settings.h"
 #include "ui.h"
@@ -178,12 +179,9 @@ static void ui_task(void*) {
 // ── Setup ─────────────────────────────────────────────────────────────────────
 void setup() {
     Serial.begin(115200);
-    Serial.println("[SignalSweep CYD v3.21] boot");
+    Serial.println("[SignalSweep CYD v3.21-hal1] boot");
 
-    // LED — all off (active LOW)
-    pinMode(PIN_LED_R, OUTPUT); digitalWrite(PIN_LED_R, HIGH);
-    pinMode(PIN_LED_G, OUTPUT); digitalWrite(PIN_LED_G, HIGH);
-    pinMode(PIN_LED_B, OUTPUT); digitalWrite(PIN_LED_B, HIGH);
+    alert_init();   // LED/speaker outputs off and ready (board layer)
 
     settings_load(g_cfg);
     focus_init();
@@ -191,8 +189,8 @@ void setup() {
     g_reg_mutex = xSemaphoreCreateMutex();
     g_queue     = xQueueCreate(16, sizeof(int));
 
-    xTaskCreatePinnedToCore(scan_task, "scan", 8192, nullptr, 1, nullptr, 0);
-    xTaskCreatePinnedToCore(ui_task,   "ui",   12288, nullptr, 1, nullptr, 1);
+    xTaskCreatePinnedToCore(scan_task, "scan", 8192, nullptr, 1, nullptr, BOARD_SCAN_TASK_CORE);
+    xTaskCreatePinnedToCore(ui_task,   "ui",   12288, nullptr, 1, nullptr, BOARD_UI_TASK_CORE);
 }
 
 void loop() { vTaskDelay(pdMS_TO_TICKS(1000)); }

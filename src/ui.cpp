@@ -1,11 +1,12 @@
-// SignalSweep CYD — UI v3.21
+// SignalSweep CYD — UI v3.21-hal1
 // Direct TFT rendering — no sprites (too much RAM on ESP32).
 // Touch debug output enabled — watch serial to verify taps.
 
-#include <TFT_eSPI.h>
 #include <Arduino.h>
-#include "touch.h"
-#include "board_pins.h"
+#include "hal/board.h"
+#include "hal/display.h"
+#include "hal/touch.h"
+#include "hal/alert_output.h"
 #include "detection.h"
 #include "settings.h"
 #include "vendor.h"
@@ -67,7 +68,7 @@ static const char* TSHRT[] = {"DRN","TRK","CAM","BCM","ATK","?"};
 
 enum class Tab { SCOPE=0, LIST=1, DETAIL=2, SETTINGS=3 };
 
-static TFT_eSPI tft;
+static Display tft;
 static Tab      s_tab        = Tab::SCOPE;
 static int      s_scroll     = 0;
 static uint8_t  s_scope[320] = {};
@@ -571,20 +572,13 @@ static uint16_t hunt_heat(int rssi) {
 }
 
 static void hunt_led(uint16_t on, int rssi) {
-    // Approximate the heat colour on the RGB LED (active LOW)
     int r = constrain(rssi, HUNT_RSSI_FLOOR, HUNT_RSSI_CEIL);
     float t = (float)(r - HUNT_RSSI_FLOOR) / (HUNT_RSSI_CEIL - HUNT_RSSI_FLOOR);
-    bool lr = on && t > 0.4f;     // red grows with closeness
-    bool lg = on && t < 0.6f;     // green fades with closeness
-    bool lb = on && t < 0.3f;     // blue only when far
-    digitalWrite(PIN_LED_R, lr?LOW:HIGH);
-    digitalWrite(PIN_LED_G, lg?LOW:HIGH);
-    digitalWrite(PIN_LED_B, lb?LOW:HIGH);
+    alert_hunt_led(on != 0, t);   // the board decides what a "heat colour" is
 }
 
 static void hunt_all_off() {
-    ledcWrite(1, 0);
-    digitalWrite(PIN_LED_R, HIGH); digitalWrite(PIN_LED_G, HIGH); digitalWrite(PIN_LED_B, HIGH);
+    alert_all_off();
 }
 
 // Called every UI frame while the HUNT sub-tab is active
@@ -600,10 +594,10 @@ static void hunt_tick(const Detection& d, const Settings& cfg, bool gone) {
         // Click: short tone burst
         if (cfg.speaker_en && now - s_hunt_last_click >= iv) {
             s_hunt_last_click = now;
-            ledcWriteTone(1, 3000);
+            alert_click_start();
             // brief — turned off on the next frame via the pulse timer
         } else if (now - s_hunt_last_click >= 12) {
-            ledcWrite(1, 0);   // end the click quickly
+            alert_click_stop();   // end the click quickly
         }
         // Pulse: screen flash + LED, same cadence as clicks
         if (now - s_hunt_last_pulse >= iv) {
@@ -1124,7 +1118,7 @@ static void draw_settings(Settings& s) {
         tft.fillCircle(*rows[i].v ? x+142 : x+127, y+18, 5, C_WHITE);
     }
     tft.setTextColor(C_MDGREY, C_BLACK);
-    tft.drawString("SignalSweep v3.21  GPL-3.0", 4, PAGE_Y+PAGE_H-12, 1);
+    tft.drawString("SignalSweep v3.21-hal1  GPL-3.0", 4, PAGE_Y+PAGE_H-12, 1);
 }
 
 // ── Touch ─────────────────────────────────────────────────────────────────────
@@ -1243,27 +1237,8 @@ static void handle_touch(int tx, int ty, const DetectionRegistry& reg, Settings&
 
 // ── Public API ────────────────────────────────────────────────────────────────
 void ui_init(Settings& s) {
-    ledcSetup(0, 5000, 8);
-    ledcAttachPin(PIN_TFT_BL, 0);
-    ledcWrite(0, s.brightness);
-
-    // Speaker on LEDC channel 1 (SC8002B amp via PIN_SPEAKER) — needed for
-    // both alert beeps and hunt-mode clicks.
-    ledcSetup(1, 2000, 8);
-    ledcAttachPin(PIN_SPEAKER, 1);
-    ledcWrite(1, 0);
-
     touch_init();
-
-    tft.init();
-    tft.setRotation(3);
-    // Panel colour fix — confirmed by boot colour test (MODE 2):
-    // rotation-3 MADCTL with BGR bit (0xE8) + display inversion ON.
-    tft.writecommand(0x36);
-    tft.writedata(0xE8);
-    tft.invertDisplay(true);
-
-
+    display_init(tft, s.brightness);   // backlight, panel init, rotation and colour fixes: board layer
 
     Serial.printf("[ui] init w=%d h=%d PAGE_H=%d ROWS_VIS=%d TAB_Y=%d\n",
                   tft.width(), tft.height(), PAGE_H, ROWS_VIS, TAB_Y);
@@ -1338,32 +1313,5 @@ void ui_update_scope(const uint8_t* buf, int len) {
 }
 
 void ui_alert(const Detection& d, const Settings& s) {
-    if (s.speaker_en) {
-        uint32_t freq=880;
-        switch(d.type){
-            case ThreatType::DRONE:   freq=TONE_DRONE;   break;
-            case ThreatType::TRACKER: freq=TONE_TRACKER; break;
-            case ThreatType::CAMERA:  freq=TONE_CAMERA;  break;
-            case ThreatType::BODYCAM: freq=TONE_BODYCAM; break;
-            case ThreatType::ATTACK:  freq=TONE_ATTACK;  break;
-            default: return;
-        }
-        ledcWriteTone(1, freq);
-        vTaskDelay(pdMS_TO_TICKS(TONE_MS));
-        ledcWriteTone(1, 0);
-    }
-    if (s.led_en) {
-        uint8_t r=HIGH,g=HIGH,b=HIGH;
-        switch(d.type){
-            case ThreatType::DRONE:   b=LOW; break;
-            case ThreatType::TRACKER: r=LOW; break;
-            case ThreatType::CAMERA:  r=LOW; break;
-            case ThreatType::BODYCAM: r=LOW; b=LOW; break;
-            case ThreatType::ATTACK:  r=LOW; g=LOW; break;
-            default: return;
-        }
-        digitalWrite(PIN_LED_R,r); digitalWrite(PIN_LED_G,g); digitalWrite(PIN_LED_B,b);
-        vTaskDelay(pdMS_TO_TICKS(200));
-        digitalWrite(PIN_LED_R,HIGH); digitalWrite(PIN_LED_G,HIGH); digitalWrite(PIN_LED_B,HIGH);
-    }
+    alert_fire(d.type, s);
 }
