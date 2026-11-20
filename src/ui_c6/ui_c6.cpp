@@ -632,7 +632,9 @@ static void settings_tap(int row, const DetectionRegistry& reg, Settings& s) {
     }
     if (it != SI_SDLOG && it != SI_SAVE && it != SI_MAC) settings_save(s);   // persistent settings only
     s_force = true;
-    Serial.printf("[ui] settings row %d (item %d)\n", row, it);
+    Serial.printf("[ui] settings row %d (item %d) -> types=%d%d%d%d%d flash=%d brightness=%d sdlog=%d saved=%d\n", row, it,
+                  s.detect_drone, s.detect_tracker, s.detect_camera, s.detect_bodycam, s.detect_attack, s.led_en, s.brightness,
+                  s_sd_log, (it != SI_SDLOG && it != SI_SAVE && it != SI_MAC));
 }
 
 // ── Gesture handling ─────────────────────────────────────────────────────────

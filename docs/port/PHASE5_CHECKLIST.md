@@ -31,3 +31,14 @@ Known and expected: no pcapng capture to SD yet (CAP page), no OTA (the CYD firm
 | 9 | Partial: screen fine and touch responsive with SD sessions. Long run with many alerts not done. |
 | 1-4, 10 | Not done. Note: Alert flash was OFF on the board (setting saved from an earlier tap); turn it ON for check 1. |
 Touch latency (found during this check): UI stalled after 2-3 gestures because serial log lines blocked the UI task once the USB TX buffer filled. Fixed with Serial.setTxTimeoutMs(0); Paul confirmed swipes fast.
+
+## Results, second pass (2026-11-20)
+| # | Result |
+|---|---|
+| 1 | PASS (Paul): header text, content flash and backlight patterns looked right per type (camera 1 long, drone 3 quick, tracker 2 medium). |
+| 2 | PASS (Paul): with Alert flash OFF the tracker alert showed no flash. |
+| 3 | PASS: drone OFF, Alert flash OFF and brightness all survived a reset (boot lines `drone=0`, `flash=0`, `brightness=40`). An earlier mismatch was taps on the wrong row (each row is 50 px) and taps made while the serial port was closed (their log lines are lost). |
+| 4 | PASS: brightness 40 kept after reset. |
+| 10 | PASS (Paul): Log alerts to SD is OFF after a reset. |
+Still open: 5 (battery vs a meter), 9 (long bus-sharing run with many alerts), 11 (buzzer, not fitted), and opening the exported files on a PC.
+The settings tap log now prints the resulting settings: `[ui] settings row N (item I) -> types=... flash=.. brightness=.. sdlog=.. saved=..`.
