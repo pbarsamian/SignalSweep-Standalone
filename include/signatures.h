@@ -76,3 +76,9 @@ struct ScanStats {
 };
 extern ScanStats g_stats;
 void stats_print();   // call periodically from the scan task
+
+// Optional trace of every scored match (the C6 serial test mode sets it; null = off, as on the CYD).
+// Called from post_detection with the raw confidence/best score, before and after the list/alert decision.
+enum PostStatus : uint8_t { POST_LOW = 0, POST_LOCK, POST_NEW, POST_UPDATE };   // below list threshold / registry busy / new entry / existing entry
+typedef void (*PostTraceFn)(const Detection& d, int confidence, int best, PostStatus st, bool alert);
+extern PostTraceFn g_post_trace;

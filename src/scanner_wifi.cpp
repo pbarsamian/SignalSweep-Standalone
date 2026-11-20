@@ -114,20 +114,19 @@ static void scope_feed(int ch, int rssi) {
     }
 }
 
-static void promisc(void* buf, wifi_promiscuous_pkt_type_t type) {
+// Frame processing, shared by both boards. The CYD calls it straight from the promiscuous callback (below);
+// the C6 callback only copies the frame and a worker task calls this (src/scan_c6/). `length` is how many bytes
+// are available at `payload`; `wire_len` is the frame's real length (sig_len). They differ when the C6 copy was
+// cut short (WIFI_RAW_MAX), in which case there is no FCS at the end to skip.
+void wifi_process_frame(uint8_t type, uint8_t* payload, int length, int wire_len, int rssi, int rxCh) {
+    bool truncated = length < wire_len;
     if (type == WIFI_PKT_DATA) {
         // Data frames only arrive while focused (filter widened); headers only
-        auto* dp = (wifi_promiscuous_pkt_t*)buf;
-        focus_note_peer(true, dp->payload, dp->rx_ctrl.sig_len, dp->rx_ctrl.rssi);
+        focus_note_peer(true, payload, wire_len, rssi);
         return;
     }
     if (type != WIFI_PKT_MGMT) return;
     g_stats.wifi_mgmt++;
-    auto* pkt = (wifi_promiscuous_pkt_t*)buf;
-    uint8_t* payload = pkt->payload;
-    int length = pkt->rx_ctrl.sig_len;
-    int rssi   = pkt->rx_ctrl.rssi;
-    int rxCh   = pkt->rx_ctrl.channel;
     if (length < 24) return;
 
     uint8_t fsubtype = (payload[0] >> 4) & 0x0F;
@@ -136,7 +135,7 @@ static void promisc(void* buf, wifi_promiscuous_pkt_type_t type) {
 
     // Focus: deep-collect every management frame from the target
     if (focus_target(addr2, FOCUS_WIFI)) focus_note_wifi(fsubtype, payload, length, rssi);
-    focus_note_peer(false, payload, length, rssi);
+    focus_note_peer(false, payload, wire_len, rssi);
 
     if (fsubtype == 8) scope_feed(rxCh, rssi);   // beacons only, as v3.2
 
@@ -189,7 +188,7 @@ static void promisc(void* buf, wifi_promiscuous_pkt_type_t type) {
     // 2. Information-element walk
     if (length > 24 + 12) {
         int offset = (fsubtype == 4) ? 24 : 36;
-        int body_len = length - offset - 4;   // -4 FCS
+        int body_len = length - offset - (truncated ? 0 : 4);   // -4 FCS (absent when the copy was truncated)
         const uint8_t* body = payload + offset;
         bool ieHit = false, ssidHit = false, wildcard = false, liteonSig = false;
         int b = 0;
@@ -299,7 +298,13 @@ static void promisc(void* buf, wifi_promiscuous_pkt_type_t type) {
     post(addr2, rssi, dsCh ? dsCh : rxCh, rule, cat, conf, best, drone, &wi);
 }
 
-void scanner_wifi_init(const Settings& s) {
+// CYD callback: all work happens here, in the WiFi task's context (unchanged from v3.21)
+static void promisc(void* buf, wifi_promiscuous_pkt_type_t type) {
+    auto* pkt = (wifi_promiscuous_pkt_t*)buf;
+    wifi_process_frame(type, pkt->payload, pkt->rx_ctrl.sig_len, pkt->rx_ctrl.sig_len, pkt->rx_ctrl.rssi, pkt->rx_ctrl.channel);
+}
+
+void scanner_wifi_init(const Settings& s, wifi_promiscuous_cb_t cb) {
     (void)s;   // live settings are read from g_cfg
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
     esp_wifi_init(&cfg);
@@ -309,7 +314,7 @@ void scanner_wifi_init(const Settings& s) {
     wifi_promiscuous_filter_t f = { .filter_mask = WIFI_PROMIS_FILTER_MASK_MGMT };
     esp_wifi_set_promiscuous_filter(&f);
     esp_wifi_set_promiscuous(true);
-    esp_wifi_set_promiscuous_rx_cb(promisc);
+    esp_wifi_set_promiscuous_rx_cb(cb ? cb : promisc);
     esp_wifi_set_channel(CH[0], WIFI_SECOND_CHAN_NONE);
     Serial.println("[wifi] init OK");
 }
@@ -323,7 +328,8 @@ void scanner_wifi_data_filter(bool on) {
     esp_wifi_set_promiscuous_filter(&f);
 }
 
-void scanner_wifi_tick(uint8_t* out, int lock_ch) {
+// Move to the next channel of the sweep, or stay on lock_ch (focus). Returns the channel now tuned.
+int scanner_wifi_hop(int lock_ch) {
     static int s_cur = 0;
     int ch;
     if (lock_ch >= 1 && lock_ch <= 13) {
@@ -333,6 +339,11 @@ void scanner_wifi_tick(uint8_t* out, int lock_ch) {
         ch = CH[s_chi];
     }
     if (ch != s_cur) { esp_wifi_set_channel(ch, WIFI_SECOND_CHAN_NONE); s_cur = ch; }
+    return ch;
+}
+
+void scanner_wifi_tick(uint8_t* out, int lock_ch) {
+    scanner_wifi_hop(lock_ch);
     for (int i=0; i<320; i++) s_pow[i] = s_pow[i] > 4 ? s_pow[i] - 4 : 0;
     memcpy(out, s_pow, 320);
     vTaskDelay(pdMS_TO_TICKS(40));

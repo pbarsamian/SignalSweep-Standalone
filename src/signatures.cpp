@@ -218,6 +218,7 @@ uint16_t parse_mfg_id(const char* s) {
 }
 
 ScanStats g_stats = {};
+PostTraceFn g_post_trace = nullptr;
 
 void stats_print() {
     static ScanStats last = {};
@@ -234,10 +235,10 @@ void stats_print() {
 
 void post_detection(Detection& d, int confidence, int bestWeight) {
     if (confidence > 100) confidence = 100;
-    if (confidence < CONF_LIST_MIN) { g_stats.post_low++; return; }
+    if (confidence < CONF_LIST_MIN) { g_stats.post_low++; if (g_post_trace) g_post_trace(d, confidence, bestWeight, POST_LOW, false); return; }
     d.confidence  = (uint8_t)confidence;
     d.best_weight = (uint8_t)(bestWeight > 100 ? 100 : bestWeight);
-    if (xSemaphoreTake(g_reg_mutex, pdMS_TO_TICKS(5)) != pdTRUE) { g_stats.post_lock++; return; }
+    if (xSemaphoreTake(g_reg_mutex, pdMS_TO_TICKS(5)) != pdTRUE) { g_stats.post_lock++; if (g_post_trace) g_post_trace(d, confidence, bestWeight, POST_LOCK, false); return; }
     int before = g_reg.count;
     int idx = g_reg.upsert(d);
     bool isNew = g_reg.count > before;
@@ -251,6 +252,7 @@ void post_detection(Detection& d, int confidence, int bestWeight) {
         }
     }
     xSemaphoreGive(g_reg_mutex);
+    if (g_post_trace) g_post_trace(d, confidence, bestWeight, isNew ? POST_NEW : POST_UPDATE, alert);
     if (isNew) {
         g_stats.post_new++;
         char m[20]; d.mac_str(m);

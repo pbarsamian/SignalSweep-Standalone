@@ -1,4 +1,4 @@
-// SignalSweep CYD v3.21-hal1
+// SignalSweep CYD v3.21-c6b
 // Upstream: https://github.com/B0z0dcl0wn/SignalSweep (GPL-3.0)
 // Board: selected at build time (src/hal/board.h)
 
@@ -179,7 +179,7 @@ static void ui_task(void*) {
 // ── Setup ─────────────────────────────────────────────────────────────────────
 void setup() {
     Serial.begin(115200);
-    Serial.println("[SignalSweep CYD v3.21-hal1] boot");
+    Serial.println("[SignalSweep CYD v3.21-c6b] boot");
 
     alert_init();   // LED/speaker outputs off and ready (board layer)
 
