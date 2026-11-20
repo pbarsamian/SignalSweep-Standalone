@@ -23,3 +23,7 @@ Navigation: swipe left/right (60 px or more, mostly horizontal) between HOME, DE
 | 11 | STATUS | Version `v3.21-c6c`, heap, counters update about once a second | |
 
 Known and expected for this phase: no sound/LED/backlight alerts (Phase 5), no SD, no battery, no RAW or CAP detail pages (see `UI_CUTS.md`).
+
+## Swipe reliability (2026-11-19, on Paul's unit)
+First report: swipes "hit and miss". After adding a per-gesture serial log (`[ui] gesture ...`) and polling touch every ~5 ms instead of at the drawing rate, two captures: run 1 logged 7 gestures (5 swipes recognised, 1 tap, 1 short vertical drag); run 2 logged 10 of 10 swipes recognised (225 to 255 px travel, 17 to 26 touch frames each, 350 to 440 ms, vertical drift up to 51 px). Paul: "much better now".
+What was not separated: the first run's misses left no log line, so whether they were missed touches, wrong-direction swipes at the first/last page (they do nothing; no wrap), or technique is unknown. Both runs used long swipes; short swipes (about 60 to 100 px) are untested. Keep the log in; it costs a serial line per gesture.

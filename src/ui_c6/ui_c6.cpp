@@ -573,6 +573,8 @@ static void settings_tap(int tx, int ty, Settings& s) {
 static struct {
     bool down = false, vertical = false, horizontal = false;
     int x0 = 0, y0 = 0, x = 0, y = 0, base = 0;
+    int n = 0, minx = 0, maxx = 0, miny = 0, maxy = 0;   // gesture log
+    uint32_t t0 = 0;
 } G;
 
 static int* cur_scroll() { return s_detail ? &s_dscroll : &s_scroll; }
@@ -623,8 +625,11 @@ static void on_touch(const TouchEvent& e, const DetectionRegistry& reg, Settings
     if (e.kind == TE_DOWN) {
         G.down = true; G.vertical = G.horizontal = false;
         G.x0 = G.x = e.x; G.y0 = G.y = e.y; G.base = *cur_scroll();
+        G.n = 1; G.minx = G.maxx = e.x; G.miny = G.maxy = e.y; G.t0 = e.ms;
     } else if (e.kind == TE_MOVE && G.down) {
         G.x = e.x; G.y = e.y;
+        G.n++; G.minx = min(G.minx, (int)e.x); G.maxx = max(G.maxx, (int)e.x);
+        G.miny = min(G.miny, (int)e.y); G.maxy = max(G.maxy, (int)e.y);
         int dx = G.x - G.x0, dy = G.y - G.y0;
         if (!G.vertical && !G.horizontal) {
             if (abs(dy) > DRAG_START && abs(dy) > abs(dx)) G.vertical = true;
@@ -638,8 +643,13 @@ static void on_touch(const TouchEvent& e, const DetectionRegistry& reg, Settings
     } else if (e.kind == TE_UP && G.down) {
         G.down = false;
         int dx = G.x - G.x0, dy = G.y - G.y0;
+        const char* verdict = (abs(dx) >= SWIPE_MIN_DX && abs(dx) > abs(dy) * 3 / 2) ? "SWIPE"
+                            : (abs(dx) <= TAP_SLOP && abs(dy) <= TAP_SLOP) ? "tap"
+                            : (abs(dy) >= abs(dx)) ? "vertical/diagonal"
+                            : (abs(dx) < SWIPE_MIN_DX) ? "too short" : "too diagonal";
+        Serial.printf("[ui] gesture %s: frames=%d dur=%ums from %d,%d to %d,%d dx=%d dy=%d (x %d..%d, y %d..%d)\n",
+                      verdict, G.n, (unsigned)(e.ms - G.t0), G.x0, G.y0, G.x, G.y, dx, dy, G.minx, G.maxx, G.miny, G.maxy);
         if (abs(dx) >= SWIPE_MIN_DX && abs(dx) > abs(dy) * 3 / 2) {
-            Serial.printf("[ui] swipe %s dx=%d dy=%d\n", dx < 0 ? "left" : "right", dx, dy);
             go_page(dx < 0 ? +1 : -1);                // finger moves left = next page
         } else if (abs(dx) <= TAP_SLOP && abs(dy) <= TAP_SLOP) {
             on_tap(G.x0, G.y0, reg, s);
@@ -662,13 +672,16 @@ void ui_init(Settings& s) {
     tft.fillScreen(BLACK);
 }
 
+// Called every few ms, separately from the drawing, so a fast swipe is not sampled at the drawing rate
+void ui_touch(const DetectionRegistry& reg, Settings& s) {
+    TouchEvent e;
+    while (touch_poll(e)) on_touch(e, reg, s);
+}
+
 void ui_update(const DetectionRegistry& reg, Settings& s) {
     s_cfg = &s;
     if (!s_have_sprites) return;
     uint32_t now = millis();
-
-    TouchEvent e;
-    while (touch_poll(e)) on_touch(e, reg, s);
 
     // header: page change, count change, toast start/stop/blink
     static bool s_toast_was = false;

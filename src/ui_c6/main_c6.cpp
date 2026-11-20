@@ -25,8 +25,10 @@ Settings          g_cfg;
 // UI task (priority 2: above the matching worker so the screen stays responsive, below the radio control task)
 static void ui_task(void*) {
     ui_init(g_cfg);
+    static DetectionRegistry snap;   // ~12 KB: keep it off the task stack
     for (;;) {
-        static DetectionRegistry snap;   // ~12 KB: keep it off the task stack
+        // touch every ~5 ms; the registry copy and the drawing every ~20 ms
+        for (int k = 0; k < 4; k++) { ui_touch(snap, g_cfg); vTaskDelay(pdMS_TO_TICKS(5)); }
         if (xSemaphoreTake(g_reg_mutex, pdMS_TO_TICKS(10)) == pdTRUE) {
             snap = g_reg;
             xSemaphoreGive(g_reg_mutex);
@@ -40,7 +42,6 @@ static void ui_task(void*) {
                 xSemaphoreGive(g_reg_mutex);
             }
         }
-        vTaskDelay(pdMS_TO_TICKS(20));
     }
 }
 
