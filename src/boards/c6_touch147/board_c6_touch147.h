@@ -49,6 +49,11 @@ typedef c6::LGFX Display;   // the drawing object type the UI uses (hal/display.
 #define TOUCH_SY_A  1.051f
 #define TOUCH_SY_B -5.0f
 
+// Optional passive buzzer on GPIO7 (the only free pin): build with -DC6_HAS_BUZZER=1 (env c6touch_buzzer). Open question Q2.
+#ifndef C6_HAS_BUZZER
+#define C6_HAS_BUZZER 0
+#endif
+
 #define BOARD_HAS_SPEAKER     0
 #define BOARD_HAS_RGB_LED     0
 #define BOARD_HAS_LDR         0

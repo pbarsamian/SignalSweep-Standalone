@@ -10,3 +10,6 @@
 
 // Bring up the backlight and the panel; leaves the screen in the UI's native orientation (SCREEN_W x SCREEN_H).
 void display_init(Display& gfx, uint8_t brightness);
+
+// Set the backlight level (0..255) at any time after display_init(); used by alert patterns.
+void display_backlight(uint8_t level);

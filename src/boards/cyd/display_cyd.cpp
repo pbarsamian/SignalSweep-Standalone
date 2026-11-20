@@ -18,3 +18,5 @@ void display_init(Display& tft, uint8_t brightness) {
     tft.writedata(0xE8);
     tft.invertDisplay(true);
 }
+
+void display_backlight(uint8_t level) { ledcWrite(0, level); }

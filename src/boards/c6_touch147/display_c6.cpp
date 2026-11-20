@@ -4,7 +4,10 @@
 #include "hal/board.h"
 #include "hal/display.h"
 
+static Display* s_gfx = nullptr;
+
 void display_init(Display& gfx, uint8_t brightness) {
+    s_gfx = &gfx;
     // Both chip selects idle high before either device is initialised (they share SCK/MOSI)
     pinMode(PIN_LCD_CS, OUTPUT); digitalWrite(PIN_LCD_CS, HIGH);
     pinMode(PIN_SD_CS, OUTPUT);  digitalWrite(PIN_SD_CS, HIGH);
@@ -13,3 +16,5 @@ void display_init(Display& gfx, uint8_t brightness) {
     gfx.setBrightness(brightness);
     gfx.fillScreen(0);
 }
+
+void display_backlight(uint8_t level) { if (s_gfx) s_gfx->setBrightness(level); }

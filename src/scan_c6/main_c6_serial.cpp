@@ -16,7 +16,7 @@
 #include "focus.h"
 #include "scan_c6.h"
 
-#define FW_VERSION "v3.21-c6c"
+#define FW_VERSION "v3.21-c6d"
 
 // ── Shared globals (the CYD's main.cpp owns these there) ─────────────────────
 DetectionRegistry g_reg;

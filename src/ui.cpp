@@ -1,4 +1,4 @@
-// SignalSweep CYD — UI v3.21-c6c
+// SignalSweep CYD — UI v3.21-c6d
 // Direct TFT rendering — no sprites (too much RAM on ESP32).
 // Touch debug output enabled — watch serial to verify taps.
 
@@ -779,7 +779,7 @@ static void draw_settings(Settings& s) {
         tft.fillCircle(*rows[i].v ? x+142 : x+127, y+18, 5, C_WHITE);
     }
     tft.setTextColor(C_MDGREY, C_BLACK);
-    tft.drawString("SignalSweep v3.21-c6c  GPL-3.0", 4, PAGE_Y+PAGE_H-12, 1);
+    tft.drawString("SignalSweep v3.21-c6d  GPL-3.0", 4, PAGE_Y+PAGE_H-12, 1);
 }
 
 // ── Touch ─────────────────────────────────────────────────────────────────────

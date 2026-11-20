@@ -56,3 +56,8 @@ GPL-3.0-or-later, so the code can be copied with its SPDX headers.
 - **C6:** LCD and TF share SCK (GPIO1) and MOSI (GPIO2), separate CS. Every SD access and every display flush goes
   through the `storage_lock()/unlock()` mutex. The existing code writes SD from one loop task, so only the display flush needs wrapping.
 - RAM: the staging buffer is 4 KB static plus the ring. Budget both against the Phase 2 free-heap report.
+
+## Status after Phase 5 (v3.21-c6d)
+Ported to `src/sd_log/` (C6 only): SD mount with the 3 s retry guard, `alerts.csv` (behind a privacy switch, off at every boot), list export schema v1 (CSV + JSON, MAC modes full / oui / none), the serial `alerts.csv` dump.
+Not ported yet: the pcapng writer, the pre-trigger ring and the CAP page (items 1 and 2 under "Must be re-done"); the CYD standalone build still needs the bit-banged touch driver before SD can work there.
+The bus rule for the C6 was resolved by keeping all SD I/O in the UI task. **Untested with a card** (none was in the slot during Phase 5); see `PHASE5_CHECKLIST.md`.

@@ -21,8 +21,10 @@
 #include "ui_model.h"
 #include "ui.h"
 #include "scan_c6/scan_c6.h"
+#include "hal/power.h"
+#include "sd_log/sd_store.h"
 
-#define UI_VERSION "v3.21-c6c"
+#define UI_VERSION "v3.21-c6d"
 
 extern DetectionRegistry g_reg;
 extern SemaphoreHandle_t g_reg_mutex;
@@ -72,6 +74,9 @@ static bool      s_dgone = false;
 static char      s_toast[40] = "";
 static uint16_t  s_toast_col = RED;
 static uint32_t  s_toast_until = 0, s_toast_start = 0;
+static uint32_t  s_flash_t0 = 0;       // full-content colour flash on alert: two short flashes
+static uint16_t  s_flash_col = RED;
+static bool      s_flash_on = false;
 static char      s_last_alert[32] = "";
 static uint16_t  s_last_alert_col = MDGREY;
 
@@ -150,7 +155,15 @@ static void draw_header(const DetectionRegistry& reg) {
         return;
     }
     txt(tft, PAGE_NAME[s_page], 8, HDR_H / 2, 2, ACCENT, BLACK, lgfx::middle_left);
-    dots(176, HDR_H / 2, P_COUNT, s_page);
+    dots(150, HDR_H / 2, P_COUNT, s_page);
+    int mv = power_battery_mv();                      // battery: percent on a straight 3.3 V to 4.2 V line (rough)
+    if (mv > 0) {
+        int pct = constrain((mv - 3300) * 100 / 900, 0, 100);
+        char bt[8]; snprintf(bt, sizeof(bt), "%d%%", pct);
+        txt(tft, bt, 226, HDR_H / 2, 2, pct < 20 ? RED : pct < 40 ? ORANGE : SIGNAL, BLACK, lgfx::middle_right);
+    } else {
+        txt(tft, "--", 226, HDR_H / 2, 2, MDGREY, BLACK, lgfx::middle_right);
+    }
     char b[16];
     snprintf(b, sizeof(b), "%d ALERTS", reg.count);
     uint16_t pc = reg.count > 0 ? RED : BORDER;
@@ -381,8 +394,8 @@ static void hunt_draw(bool force) {
         if (now - s_hunt_last_pulse >= iv) {
             s_hunt_last_pulse = now;
             s_hunt_pulse = !s_hunt_pulse;
-            alert_hunt_led(s_hunt_pulse, constrain((float)(rssi - HUNT_RSSI_FLOOR) / (HUNT_RSSI_CEIL - HUNT_RSSI_FLOOR), 0.0f, 1.0f));
-            if (s_hunt_pulse) alert_click_start(); else alert_click_stop();
+            if (s_cfg->led_en) alert_hunt_led(s_hunt_pulse, constrain((float)(rssi - HUNT_RSSI_FLOOR) / (HUNT_RSSI_CEIL - HUNT_RSSI_FLOOR), 0.0f, 1.0f));
+            if (s_cfg->speaker_en) { if (s_hunt_pulse) alert_click_start(); else alert_click_stop(); }
         }
     } else {
         alert_all_off(); s_hunt_pulse = false;
@@ -509,15 +522,37 @@ static void draw_status(const DetectionRegistry& reg) {
     snprintf(l, sizeof(l), "Dropped %u   match %u us           ", (unsigned)(s.wifi_qdrop + s.ble_qdrop),
              s.wifi_done ? (unsigned)(s.wifi_us_total / s.wifi_done) : 0);
     txt(tft, l, 8, y, 2, (s.wifi_qdrop + s.ble_qdrop) ? ORANGE : LTGREY, BLACK); y += 22;
-    txt(tft, "SD: not wired yet   Battery: --        ", 8, y, 2, MDGREY, BLACK);
+    int mv = power_battery_mv();
+    char bt[16];
+    if (mv > 0) snprintf(bt, sizeof(bt), "%d.%02dV", mv / 1000, (mv % 1000) / 10); else snprintf(bt, sizeof(bt), "--");
+    snprintf(l, sizeof(l), "Batt %s   SD %s              ", bt, sd_card_text());
+    txt(tft, l, 8, y, 2, LTGREY, BLACK);
 }
 
-// ── SETTINGS page ─────────────────────────────────────────────────────────────
+// ── SETTINGS page: a scrolling list of 50 px rows ────────────────────────────
+// Rows 0-4 type toggles, then alert flash, buzzer (only when built with C6_HAS_BUZZER), SD alert log (privacy switch,
+// off at every boot), MAC mode of exports, "save list to SD", brightness.
+enum SetItem { SI_T0 = 0, SI_FLASH = 5, SI_BUZZER, SI_SDLOG, SI_MAC, SI_SAVE, SI_BRIGHT };
 static const uint8_t BRIGHT_STEPS[] = {40, 100, 170, 255};
-#define SBTN_W 100
-#define SBTN_H 66
-static int sbtn_x(int i) { return 6 + (i % 3) * 106; }
-static int sbtn_y(int i) { return CONT_Y + 6 + (i / 3) * 72; }
+static const char* const MACMODE_NAME[] = {"full", "OUI only", "none"};
+static bool      s_sd_log = false;             // alerts.csv logging: runtime only, resets every boot (privacy)
+static SdMacMode s_mac_mode = SDMAC_FULL;
+static char      s_save_msg[40] = "";
+static uint32_t  s_save_msg_until = 0;
+
+static int set_items[16], set_n = 0;
+static void set_build() {
+    set_n = 0;
+    for (int i = 0; i < 5; i++) set_items[set_n++] = SI_T0 + i;
+    set_items[set_n++] = SI_FLASH;
+#if C6_HAS_BUZZER
+    set_items[set_n++] = SI_BUZZER;
+#endif
+    set_items[set_n++] = SI_SDLOG;
+    set_items[set_n++] = SI_MAC;
+    set_items[set_n++] = SI_SAVE;
+    set_items[set_n++] = SI_BRIGHT;
+}
 
 static bool type_on(const Settings& s, int i) {
     switch (i) { case 0: return s.detect_drone; case 1: return s.detect_tracker; case 2: return s.detect_camera;
@@ -528,45 +563,75 @@ static void type_set(Settings& s, int i, bool v) {
                  case 3: s.detect_bodycam = v; break; default: s.detect_attack = v; break; }
 }
 
-static void draw_settings(const Settings& s) {
-    for (int i = 0; i < 6; i++) {
-        int x = sbtn_x(i), y = sbtn_y(i);
-        if (i < 5) {
-            bool on = type_on(s, i);
-            uint16_t col = TCOL[i];
-            tft.fillRoundRect(x, y, SBTN_W, SBTN_H, 8, on ? col : PANEL);
-            if (!on) tft.drawRoundRect(x, y, SBTN_W, SBTN_H, 8, BORDER);
-            txt(tft, TNAME[i], x + SBTN_W / 2, y + 22, 2, on ? BLACK : LTGREY, on ? col : PANEL, lgfx::middle_center);
-            txt(tft, on ? "ON" : "OFF", x + SBTN_W / 2, y + 46, 2, on ? BLACK : MDGREY, on ? col : PANEL, lgfx::middle_center);
-        } else {
-            tft.fillRoundRect(x, y, SBTN_W, SBTN_H, 8, PANEL);
-            tft.drawRoundRect(x, y, SBTN_W, SBTN_H, 8, ACCENT);
-            txt(tft, "Brightness", x + SBTN_W / 2, y + 22, 2, LTGREY, PANEL, lgfx::middle_center);
-            char b[8]; snprintf(b, sizeof(b), "%d", (int)(s.brightness * 100 / 255));
-            txt(tft, b, x + SBTN_W / 2, y + 46, 2, ACCENT, PANEL, lgfx::middle_center);
-        }
+static int  set_rh(int) { return LIST_RH; }
+static void set_draw(int row, const DetectionRegistry&) {
+    int it = set_items[row];
+    uint16_t bg = (row & 1) ? PANEL2 : PANEL, stripe = ACCENT;
+    char label[28] = "", val[34] = "";
+    bool on = false, is_toggle = false;
+    const Settings& s = *s_cfg;
+    if (it <= 4) {
+        snprintf(label, sizeof(label), "%s", TNAME[it]); stripe = TCOL[it];
+        on = type_on(s, it); is_toggle = true;
+    } else if (it == SI_FLASH) {
+        snprintf(label, sizeof(label), "Alert flash"); on = s.led_en; is_toggle = true;
+    } else if (it == SI_BUZZER) {
+        snprintf(label, sizeof(label), "Buzzer (GPIO7)"); on = s.speaker_en; is_toggle = true;
+    } else if (it == SI_SDLOG) {
+        snprintf(label, sizeof(label), "Log alerts to SD"); on = s_sd_log; is_toggle = true;
+        if (s_sd_log) snprintf(val, sizeof(val), "ON  %u", (unsigned)g_sd_stats.alerts_logged);
+    } else if (it == SI_MAC) {
+        snprintf(label, sizeof(label), "MAC in exports"); snprintf(val, sizeof(val), "%s", MACMODE_NAME[s_mac_mode]);
+    } else if (it == SI_SAVE) {
+        snprintf(label, sizeof(label), "Save list to SD");
+        if (millis() < s_save_msg_until) snprintf(val, sizeof(val), "%s", s_save_msg); else snprintf(val, sizeof(val), "tap");
+    } else {
+        snprintf(label, sizeof(label), "Brightness"); snprintf(val, sizeof(val), "%d%%", (int)(s.brightness * 100 / 255));
+    }
+    rowspr.fillSprite(bg);
+    rowspr.fillRect(0, 0, 8, LIST_RH, stripe);
+    txt(rowspr, label, 18, LIST_RH / 2, 2, WHITE, bg, lgfx::middle_left);
+    if (is_toggle) {
+        uint16_t pc = on ? SIGNAL : BORDER;
+        rowspr.fillRoundRect(SCREEN_W - 70, 9, 58, 32, 10, pc);
+        txt(rowspr, on ? "ON" : "OFF", SCREEN_W - 41, LIST_RH / 2, 2, on ? BLACK : LTGREY, pc, lgfx::middle_center);
+        if (val[0]) txt(rowspr, val, SCREEN_W - 78, LIST_RH / 2, 2, MDGREY, bg, lgfx::middle_right);
+    } else {
+        fit(rowspr, val, 2, 150);
+        txt(rowspr, val, SCREEN_W - 14, LIST_RH / 2, 2, ACCENT, bg, lgfx::middle_right);
     }
 }
+static RowList set_rows() { return RowList{set_n, set_rh, set_draw}; }
 
-static void settings_tap(int tx, int ty, Settings& s) {
-    for (int i = 0; i < 6; i++) {
-        int x = sbtn_x(i), y = sbtn_y(i);
-        if (tx < x || tx >= x + SBTN_W || ty < y || ty >= y + SBTN_H) continue;
-        if (i < 5) {
-            bool nv = !type_on(s, i);
-            type_set(s, i, nv);
-            if (!nv) purge_type((ThreatType)i);
-        } else {
-            int next = 0;   // next step above the current brightness, wrapping
-            for (size_t k = 0; k < sizeof(BRIGHT_STEPS); k++) if (BRIGHT_STEPS[k] > s.brightness) { next = k; break; }
-            s.brightness = BRIGHT_STEPS[next];
-            tft.setBrightness(s.brightness);
-        }
-        settings_save(s);
-        s_force = true;
-        Serial.printf("[ui] settings button %d\n", i);
-        return;
+static void settings_tap(int row, const DetectionRegistry& reg, Settings& s) {
+    if (row < 0 || row >= set_n) return;
+    int it = set_items[row];
+    if (it <= 4) {
+        bool nv = !type_on(s, it);
+        type_set(s, it, nv);
+        if (!nv) purge_type((ThreatType)it);
+    } else if (it == SI_FLASH) { s.led_en = !s.led_en;
+    } else if (it == SI_BUZZER) { s.speaker_en = !s.speaker_en;
+    } else if (it == SI_SDLOG) {
+        s_sd_log = !s_sd_log;
+        if (s_sd_log && !sd_card_ok()) snprintf(s_save_msg, sizeof(s_save_msg), "no SD card");   // card is checked now, once
+        Serial.printf("[ui] SD alert log %s (card: %s)\n", s_sd_log ? "ON" : "off", sd_card_text());
+    } else if (it == SI_MAC) { s_mac_mode = (SdMacMode)((s_mac_mode + 1) % 3);
+    } else if (it == SI_SAVE) {
+        char m[40];
+        bool ok = sd_list_export(reg, s_mac_mode, "all", m, sizeof(m));
+        snprintf(s_save_msg, sizeof(s_save_msg), "%s", m);
+        s_save_msg_until = millis() + 6000;
+        Serial.printf("[ui] save list: %s (%s)\n", m, ok ? "ok" : "failed");
+    } else {
+        int next = 0;   // next step above the current brightness, wrapping
+        for (size_t k = 0; k < sizeof(BRIGHT_STEPS); k++) if (BRIGHT_STEPS[k] > s.brightness) { next = k; break; }
+        s.brightness = BRIGHT_STEPS[next];
+        display_backlight(s.brightness);
     }
+    if (it != SI_SDLOG && it != SI_SAVE && it != SI_MAC) settings_save(s);   // persistent settings only
+    s_force = true;
+    Serial.printf("[ui] settings row %d (item %d)\n", row, it);
 }
 
 // ── Gesture handling ─────────────────────────────────────────────────────────
@@ -581,10 +646,13 @@ static int* cur_scroll() { return s_detail ? &s_dscroll : &s_scroll; }
 
 static bool page_scrolls(const DetectionRegistry& reg) {
     if (s_detail) return s_dpage == DP_INFO || s_dpage == DP_LINKS || s_dpage == DP_TRAFF;
-    return s_page == P_LIST && reg.count > 0;
+    return (s_page == P_LIST && reg.count > 0) || s_page == P_SET;
 }
 
-static RowList active_rows(const DetectionRegistry& reg) { return s_detail ? detail_rows() : list_rows(reg); }
+static RowList active_rows(const DetectionRegistry& reg) {
+    if (s_detail) return detail_rows();
+    return s_page == P_SET ? set_rows() : list_rows(reg);
+}
 
 static void go_page(int dir) {
     if (s_detail) {
@@ -617,7 +685,7 @@ static void on_tap(int tx, int ty, const DetectionRegistry& reg, Settings& s) {
         int i = rows_hit(L, s_scroll, ty);
         if (i >= 0 && i < reg.count) open_detail(reg.items[i]);
     } else if (s_page == P_SET) {
-        settings_tap(tx, ty, s);
+        settings_tap(rows_hit(set_rows(), s_scroll, ty), reg, s);
     }
 }
 
@@ -663,6 +731,7 @@ void ui_init(Settings& s) {
     display_init(tft, s.brightness);
     touch_init();
     alert_init();
+    set_build();
     rowspr.setColorDepth(16);
     ringspr.setColorDepth(16);
     bool ok = rowspr.createSprite(SCREEN_W, LIST_RH) && ringspr.createSprite(112, 112);
@@ -682,6 +751,10 @@ void ui_update(const DetectionRegistry& reg, Settings& s) {
     s_cfg = &s;
     if (!s_have_sprites) return;
     uint32_t now = millis();
+    alert_tick(s);
+
+    static uint32_t s_bat_ms = 0;
+    if (now - s_bat_ms >= 5000) { s_bat_ms = now; s_hdr_dirty = true; }      // battery text in the header
 
     // header: page change, count change, toast start/stop/blink
     static bool s_toast_was = false;
@@ -697,6 +770,19 @@ void ui_update(const DetectionRegistry& reg, Settings& s) {
         }
     }
     s_toast_was = toast;
+
+    if (s_flash_t0) {                                       // alert flash: content area in the threat colour, twice
+        uint32_t dt = now - s_flash_t0;
+        if (dt >= 330) { s_flash_t0 = 0; s_flash_on = false; s_force = true; }
+        else {
+            bool on = dt < 110 || (dt >= 220);
+            if (on != s_flash_on) {
+                s_flash_on = on;
+                if (on) tft.fillRect(0, CONT_Y, SCREEN_W, CONT_H, s_flash_col); else s_force = true;
+            }
+            if (s_flash_on) return;
+        }
+    }
 
     static uint32_t s_page_ms = 0;
     static int s_prev_count = -1;
@@ -751,7 +837,12 @@ void ui_update(const DetectionRegistry& reg, Settings& s) {
             if (force || now - s_page_ms >= 1000) { s_page_ms = now; draw_status(reg); }
             break;
         case P_SET:
-            if (force) draw_settings(s);
+            if (force || now - s_page_ms >= 1000) {
+                s_page_ms = now;
+                RowList L = set_rows();
+                if (s_scroll > rows_max_scroll(L)) s_scroll = rows_max_scroll(L);
+                rows_paint(L, s_scroll, reg);
+            }
             break;
     }
 }
@@ -767,5 +858,7 @@ void ui_alert(const Detection& d, const Settings& s) {
     s_toast_until = s_toast_start + 4000;
     snprintf(s_last_alert, sizeof(s_last_alert), "%s", d.name);
     s_last_alert_col = tc;
-    alert_fire(d.type, s);   // no-op until Phase 5
+    alert_fire(d.type, s);                              // backlight pattern / buzzer, advanced by alert_tick()
+    if (s.led_en) { s_flash_t0 = millis(); s_flash_col = tc; }
+    if (s_sd_log) sd_log_alert(d);                      // UI task only: the SD card shares the LCD's SPI bus
 }

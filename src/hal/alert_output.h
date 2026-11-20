@@ -11,3 +11,7 @@ void alert_click_start();                                // hunt-mode click on
 void alert_click_stop();                                 // hunt-mode click off
 void alert_hunt_led(bool on, float closeness);           // closeness 0 (far) .. 1 (on top of it)
 void alert_all_off();                                    // tone and LED off
+
+// Advance any pattern in progress (backlight pulses, buzzer). Called every UI frame; boards whose alert_fire() blocks
+// (the CYD) leave it empty.
+void alert_tick(const Settings& cfg);

@@ -86,3 +86,8 @@ cumulative 6396 management frames and 4429 BLE adverts processed with `qdrop=0` 
 ## Phase 4 additions (env `c6touch`)
 - Heap with display, two sprites (320x50 row band = 32 KB, 112x112 ring = 25 KB), both radios and the registry: **about 132 KB free, largest block about 117 KB** (Phase 3 serial-only: 225 KB / 209 KB). So the UI plus LovyanGFX costs about 93 KB of heap. A full 110 KB frame buffer would not fit alongside these, which confirms banded/sprite rendering.
 - Worker time per frame measured while the UI runs: mean unchanged (0.9 ms), worst case rises to 14 to 24 ms because the UI task (priority 2) preempts the worker (priority 1) during sprite pushes. Queue drops stayed 0 in a 30 s test with demo inputs; not tested under heavy traffic with the UI scrolling.
+
+## Phase 5 additions
+- **SD arbitration:** SD I/O only from the `ui` task (it is also the only task that draws). `sd_store.h` documents the rule. `ui_alert` runs after the registry mutex is released (`main_c6.cpp`), otherwise a slow SD write would make `post_detection()` time out.
+- **Measured with a failed SD mount (empty slot):** the attempt temporarily takes about 28 KB of heap (minimum free fell from 131 KB to 103 KB) and leaves the largest block at 88 KB instead of 117 KB. Heap free returned to 133 KB. The matching worker's worst case rose to 36 to 76 ms while the mount ran. Expect similar stalls on real SD writes (not measured).
+- UI task stack: 6452 B free of 8192 at worst so far.

@@ -68,3 +68,5 @@ void alert_all_off() {
     ledcWrite(1, 0);
     digitalWrite(PIN_LED_R, HIGH); digitalWrite(PIN_LED_G, HIGH); digitalWrite(PIN_LED_B, HIGH);
 }
+
+void alert_tick(const Settings&) {}

@@ -1,5 +1,14 @@
 # Changelog
 
+## v3.21-c6d — Phase 5: alerts, SD logging, settings, battery (in progress, hardware review pending)
+- **Alerts:** `alert_c6.cpp` runs a non-blocking backlight pulse pattern per threat type (advanced by a new `alert_tick()` HAL call), plus a two-flash colour flash of the content area and the header banner. Optional passive buzzer on GPIO7 behind `-DC6_HAS_BUZZER=1` (`env:c6touch_buzzer`, compiled, untested; no buzzer fitted). New HAL call `display_backlight()`.
+- **SD:** `src/sd_log/` ports `alerts.csv` and the detection-list export (schema v1) from SignalSweep-CYD@163c063. Alert logging is behind a privacy switch that is off at every boot. SD I/O happens only in the UI task, which is also the only task that draws, so the shared LCD/TF bus is never used by two tasks (no mutex needed yet). The alert path copies the detection out and releases the registry mutex before it can touch the card. pcapng capture is not ported.
+- **Settings:** SETTINGS is now a scrolling list of 50 px rows: five type toggles, alert flash, (buzzer), SD alert log, MAC mode of exports, save list to SD, brightness. Persistence stays on NVS `Preferences` (already used since v3.21; no migration, no new partition use). Alert flash and buzzer reuse the existing `led_en` and `speaker_en` keys.
+- **Battery:** `power_c6.cpp` reads GPIO0 with `analogReadMilliVolts`, VBAT = 3 x VADC, smoothed; header shows a rough percent, STATUS the voltage; serial `v`. Needs a meter check.
+- **Not done:** pcapng capture and the CAP page, OTA (the CYD firmware has none), IMU (optional, off by default).
+- Build: c6touch RAM 87,864 B static, flash 1,369,866 B; CYD RAM 85,804 B (unchanged), flash 1,038,409 B (+24 B vs v3.21-c6c). CYD not run on hardware. Version strings in the CYD sources are `v3.21-c6d`.
+- Hardware checklist: `docs/port/PHASE5_CHECKLIST.md`.
+
 ## v3.21-c6c — Phase 4: C6 UI, 320x172 landscape, swipe navigation (in progress, hardware review pending)
 - New `env:c6touch` (scanners + UI): `src/ui_c6/` (swipe pages HOME / DETECTIONS / STATUS / SETTINGS, detail view with INFO / LINKS / TRAFFIC / HUNT), `src/boards/c6_touch147/` display, touch (with press/move/release events, `hal/touch_events.h`) and a placeholder alert output.
 - Shared change: the detail-page row builders moved unchanged from `src/ui.cpp` to `src/ui_model.cpp` + `include/ui_model.h`. CYD build: RAM 85,804 B (unchanged), flash 1,038,385 B (+252 B vs v3.21-c6b). Not run on a CYD.
