@@ -61,6 +61,7 @@ static int      s_dpage = DP_INFO;
 static int      s_scroll = 0;        // LIST scroll, px
 static int      s_dscroll = 0;       // detail scroll, px
 static bool     s_force = true;      // redraw the content area from scratch
+static uint32_t s_page_req_ms = 0;   // set by go_page, cleared when the redraw has finished (latency log)
 static bool     s_hdr_dirty = true;
 static int      s_last_count = -1;
 static Settings* s_cfg = nullptr;
@@ -636,7 +637,7 @@ static void settings_tap(int row, const DetectionRegistry& reg, Settings& s) {
 
 // ── Gesture handling ─────────────────────────────────────────────────────────
 static struct {
-    bool down = false, vertical = false, horizontal = false;
+    bool down = false, vertical = false, horizontal = false, fired = false;   // fired: the page swipe already happened mid-gesture
     int x0 = 0, y0 = 0, x = 0, y = 0, base = 0;
     int n = 0, minx = 0, maxx = 0, miny = 0, maxy = 0;   // gesture log
     uint32_t t0 = 0;
@@ -667,6 +668,7 @@ static void go_page(int dir) {
         s_page = np; s_scroll = 0;
     }
     s_force = true; s_hdr_dirty = true;
+    s_page_req_ms = millis();
 }
 
 static void on_tap(int tx, int ty, const DetectionRegistry& reg, Settings& s) {
@@ -691,7 +693,7 @@ static void on_tap(int tx, int ty, const DetectionRegistry& reg, Settings& s) {
 
 static void on_touch(const TouchEvent& e, const DetectionRegistry& reg, Settings& s) {
     if (e.kind == TE_DOWN) {
-        G.down = true; G.vertical = G.horizontal = false;
+        G.down = true; G.vertical = G.horizontal = G.fired = false;
         G.x0 = G.x = e.x; G.y0 = G.y = e.y; G.base = *cur_scroll();
         G.n = 1; G.minx = G.maxx = e.x; G.miny = G.maxy = e.y; G.t0 = e.ms;
     } else if (e.kind == TE_MOVE && G.down) {
@@ -708,8 +710,16 @@ static void on_touch(const TouchEvent& e, const DetectionRegistry& reg, Settings
             int ns = constrain(G.base - dy, 0, rows_max_scroll(L));
             if (ns != *cur_scroll()) { *cur_scroll() = ns; s_force = true; }
         }
+        // Page swipe fires as soon as the travel is enough, without waiting for the finger to lift (the lift is only
+        // detected after the release timeout, which made every swipe feel late).
+        if (!G.fired && !G.vertical && abs(dx) >= SWIPE_MIN_DX && abs(dx) > abs(dy) * 3 / 2) {
+            G.fired = true;
+            Serial.printf("[ui] gesture SWIPE (live): frames=%d dur=%ums dx=%d dy=%d\n", G.n, (unsigned)(e.ms - G.t0), dx, dy);
+            go_page(dx < 0 ? +1 : -1);                // finger moves left = next page
+        }
     } else if (e.kind == TE_UP && G.down) {
         G.down = false;
+        if (G.fired) return;                          // already handled while moving
         int dx = G.x - G.x0, dy = G.y - G.y0;
         const char* verdict = (abs(dx) >= SWIPE_MIN_DX && abs(dx) > abs(dy) * 3 / 2) ? "SWIPE"
                             : (abs(dx) <= TAP_SLOP && abs(dy) <= TAP_SLOP) ? "tap"
@@ -751,6 +761,10 @@ void ui_update(const DetectionRegistry& reg, Settings& s) {
     s_cfg = &s;
     if (!s_have_sprites) return;
     uint32_t now = millis();
+    // Latency probe: time from a page change request (go_page) to the end of the redraw that follows it.
+    struct PageProbe { uint32_t start; ~PageProbe() {
+        if (s_page_req_ms) { Serial.printf("[ui] page change: request->drawn %lu ms (this update %lu ms)\n",
+            (unsigned long)(millis() - s_page_req_ms), (unsigned long)(millis() - start)); s_page_req_ms = 0; } } } probe{now};
     alert_tick(s);
 
     static uint32_t s_bat_ms = 0;

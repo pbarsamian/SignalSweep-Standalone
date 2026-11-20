@@ -11,7 +11,7 @@
 
 // The controller raises INT once per frame while a finger is down and sends nothing on release that this driver
 // reads, so a release is "no frame for RELEASE_MS". (Frames were seen every 10-20 ms in the Phase 2 capture.)
-#define RELEASE_MS 120
+#define RELEASE_MS 70
 
 static bool     s_down = false;
 static int      s_x = 0, s_y = 0;
