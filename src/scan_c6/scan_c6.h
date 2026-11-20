@@ -54,4 +54,7 @@ bool scan_c6_surveying();
 bool scan_c6_inject_ble(const BleAdv& a);
 bool scan_c6_inject_wifi(uint8_t type, const uint8_t* frame, int len, int rssi, int ch);
 
+// Demo inputs for bench/UI testing: '1' BLE Penguin name, '2' WiFi beacon TELLO-TEST01, '3' Apple long-form BLE advert
+void scan_c6_inject_demo(char which);
+
 void scan_c6_print_info();   // heap, stack high-water marks, queue fill, timing

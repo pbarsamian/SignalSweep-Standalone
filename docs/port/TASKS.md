@@ -17,7 +17,7 @@ hold the radio tasks. The callbacks only copy bytes and queue them.
 | `scanctl` (control) | 3 | 4096 | 2216 | BLE/WiFi time-slicing, channel hop, focus mode, registry prune. Sleeps 40 ms (WiFi) or 50 ms (BLE) per loop, so it uses very little CPU |
 | `scanwork` (worker) | 1 | 6144 | 3528 | takes one item at a time from both queues (queue set) and runs the matching: `wifi_process_frame()` (shared with the CYD) and `ble_process_advert()` |
 | `loopTask` (Arduino) | 1 (`cores/esp32/main.cpp:113`) | Arduino default | not measured | Phase 3: serial commands and 5 s status lines |
-| UI task (Phase 4) | proposed 2 | 12288 on the CYD, to be sized | not built | must stay above the worker so the display stays responsive, below `scanctl` |
+| `ui` (Phase 4, `ui_c6/main_c6.cpp`) | 2 | 8192 | see `[stack] ui` from the `i` command | touch events, page drawing (LovyanGFX), alert queue. Above the worker so the screen stays responsive, below `scanctl`. Draws from a registry snapshot taken each frame |
 
 Priorities: the worker is deliberately low (1). Under a frame flood the pool fills and frames are dropped and counted (`wifi_qdrop`),
 which is the designed overload behaviour; a high-priority worker would instead starve the UI and serial. Stack sizes were set from the CYD (8192 for its scan task)
@@ -82,3 +82,7 @@ cumulative 6396 management frames and 4429 BLE adverts processed with `qdrop=0` 
 - `src/scan_c6/ble_adv.cpp` duplicates the CYD's `scanner_ble.cpp` rules over a different data source. Unify after the CYD hardware tests (`CYD_TEST_CHECKLIST.md`) so the BLE rules live in one place.
 - `scanner_wifi.cpp` is shared. The CYD's promiscuous callback now calls `wifi_process_frame()` instead of holding the body itself (same code, moved); CYD build: RAM +8 B, flash +148 B. **Not yet run on a CYD.**
 - Real-world tests Paul has to run: see "Phase 3 hardware checklist" in `docs/port/PHASE3_CHECKLIST.md`.
+
+## Phase 4 additions (env `c6touch`)
+- Heap with display, two sprites (320x50 row band = 32 KB, 112x112 ring = 25 KB), both radios and the registry: **about 132 KB free, largest block about 117 KB** (Phase 3 serial-only: 225 KB / 209 KB). So the UI plus LovyanGFX costs about 93 KB of heap. A full 110 KB frame buffer would not fit alongside these, which confirms banded/sprite rendering.
+- Worker time per frame measured while the UI runs: mean unchanged (0.9 ms), worst case rises to 14 to 24 ms because the UI task (priority 2) preempts the worker (priority 1) during sprite pushes. Queue drops stayed 0 in a 30 s test with demo inputs; not tested under heavy traffic with the UI scrolling.

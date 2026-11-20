@@ -1,6 +1,6 @@
 # UI cuts and changes for the C6 build (320x172 landscape, capacitive touch)
 
-Decided by Paul, 2026-11-19. These are Phase 4 inputs. Nothing here is implemented yet. The CYD UI is unchanged.
+Decided by Paul, 2026-11-19. Implemented in Phase 4 (`src/ui_c6/`, env `c6touch`) except where marked; the CYD UI is unchanged (its row builders moved to `src/ui_model.cpp`, shared by both).
 
 ## 1. Spectrum scope becomes a simple indicator
 - **CYD today:** a 320-sample oscilloscope-style scope (`g_scope[2][320]`, per-channel humps for WiFi, three peaks for BLE), bright-top/dim-bottom bars, drawn on the SCOPE tab.
@@ -32,3 +32,13 @@ Minimum about 50 px (5 mm) on the C6, against the CYD's 34 px bars. Applies to b
 
 ## Other C6 cuts already known
 - No speaker, RGB LED or LDR: the alert and hunt-mode outputs become backlight pulses, screen flashes and the optional GPIO7 buzzer (open question Q2 in `AUDIT.md`).
+
+## Phase 4 as built (what changed and what was cut)
+- **Pages (swipe left/right):** HOME (turning ring: detections by type, plus WiFi and BLE activity bars, strongest signal, current radio, last alert), DETECTIONS (50 px rows, drag to scroll), STATUS (version, heap, counters), SETTINGS (5 type toggles and brightness, 100x66 px buttons). No tab bar. Page dots in the header.
+- **Detail view (tap a row):** INFO, LINKS, TRAFFIC, HUNT, swiped the same way; swipe right on INFO or the `< BACK` corner leaves. This settles the open question above: swiping pages through the sub-pages, with swipe-right-at-the-start and a corner button to leave.
+- **Cut from the detail view:** RAW (advert hex / IE map) and CAP (SD capture). RAW is a data dump that does not fit 172 px well and can be added if wanted; CAP needs the SD work in Phase 5.
+- **Cut from SETTINGS:** the speaker and LED toggles (the board has neither). Alert and hunt feedback (backlight, buzzer) arrive with Phase 5.
+- **Cut from HOME:** the spectrum scope, as decided. Replaced by the ring and bars, fed by `scan_c6_activity()`.
+- **Text size:** the smallest font used is 16 px (Font 2). The 8 px font is about 0.9 mm tall on this 1.47 inch panel and was not used. INFO rows are one line per field (30 px), so long values are cut with `..`.
+- **Touch targets:** list and peer rows are 50 px, settings buttons 100x66, the BACK corner 70x32 (the CYD's back target is 80x22). INFO/link text rows (24 to 30 px) are not tappable, apart from peer rows.
+- **Not verified:** the layout was built without seeing the screen; `PHASE4_CHECKLIST.md` lists what Paul has to judge.

@@ -1,5 +1,13 @@
 # Changelog
 
+## v3.21-c6c — Phase 4: C6 UI, 320x172 landscape, swipe navigation (in progress, hardware review pending)
+- New `env:c6touch` (scanners + UI): `src/ui_c6/` (swipe pages HOME / DETECTIONS / STATUS / SETTINGS, detail view with INFO / LINKS / TRAFFIC / HUNT), `src/boards/c6_touch147/` display, touch (with press/move/release events, `hal/touch_events.h`) and a placeholder alert output.
+- Shared change: the detail-page row builders moved unchanged from `src/ui.cpp` to `src/ui_model.cpp` + `include/ui_model.h`. CYD build: RAM 85,804 B (unchanged), flash 1,038,385 B (+252 B vs v3.21-c6b). Not run on a CYD.
+- C6 build: static RAM 86,840 B, flash 1,306,594 B. Heap with UI and radios: about 132 KB free.
+- Cuts and decisions: `docs/port/UI_CUTS.md`. Hardware checklist: `docs/port/PHASE4_CHECKLIST.md`. The layout was built without seeing the screen.
+- Serial: `1`/`2`/`3` inject demo detections, `i` prints heap/stack/queue info.
+- Version strings in the CYD sources are now `v3.21-c6c`.
+
 ## v3.21-c6b — Phase 3: scanning core with serial output (in progress, gate pending)
 - New `env:c6scan` (`src/scan_c6/`): WiFi promiscuous and BLE scanners on the single-core C6, serial output only. Radio callbacks only copy; a worker task does the matching; a control task time-slices the radio (`SCAN_SLICE_MS` 6000). Details and priorities: `docs/port/TASKS.md`.
 - Shared change: `scanner_wifi.cpp` now has `wifi_process_frame()` (the old callback body) and `scanner_wifi_hop()`; the CYD callback calls the former. `scanner_wifi_init` takes an optional callback. `post_detection` gained an optional trace hook (`g_post_trace`, null on the CYD). Behavior on the CYD is meant to be identical, but it has not been run on a CYD.

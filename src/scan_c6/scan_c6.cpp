@@ -321,6 +321,8 @@ void scan_c6_print_info() {
     Serial.printf("[stack] worker free-min=%u B (of 6144), control free-min=%u B (of 4096)\n",
         (unsigned)(s_worker_h ? uxTaskGetStackHighWaterMark(s_worker_h) : 0),
         (unsigned)(s_control_h ? uxTaskGetStackHighWaterMark(s_control_h) : 0));
+    TaskHandle_t ui = xTaskGetHandle("ui");
+    if (ui) Serial.printf("[stack] ui free-min=%u B\n", (unsigned)uxTaskGetStackHighWaterMark(ui));
     Serial.printf("[queue] wifi pool free=%u/%d waiting=%u | ble waiting=%u/%d\n",
         (unsigned)uxQueueMessagesWaiting(s_free), WIFI_POOL, (unsigned)uxQueueMessagesWaiting(s_wq),
         (unsigned)uxQueueMessagesWaiting(s_bq), BLE_QUEUE_DEPTH);
@@ -337,4 +339,59 @@ void scan_c6_print_info() {
     Serial.print("[mgmt subtypes]");
     for (int i = 0; i < 16; i++) if (s.mgmt_sub[i]) Serial.printf(" %d:%u", i, (unsigned)s.mgmt_sub[i]);
     Serial.println();
+}
+
+// ── Synthetic inputs: the whole worker path without needing a transmitter ────
+static void inject_ble_penguin() {
+    BleAdv a{};
+    static const uint8_t mac[6] = {0xC8, 0x11, 0x22, 0x33, 0x44, 0x55};
+    memcpy(a.mac, mac, 6); a.addr_type = 1; a.adv_type = 0; a.rssi = -55;
+    const char* name = "Penguin-0123456789";
+    uint8_t n = (uint8_t)strlen(name), p = 0;
+    a.payload[p++] = 2; a.payload[p++] = 0x01; a.payload[p++] = 0x06;      // flags
+    a.payload[p++] = (uint8_t)(n + 1); a.payload[p++] = 0x09;              // complete local name
+    memcpy(&a.payload[p], name, n); p += n;
+    a.len = p;
+    Serial.printf("[inject] BLE advert, name '%s' -> %s\n", name, scan_c6_inject_ble(a) ? "queued" : "queue full");
+}
+
+static void inject_ble_airtag() {
+    BleAdv a{};
+    static const uint8_t mac[6] = {0xE2, 0x01, 0x02, 0x03, 0x04, 0x05};
+    memcpy(a.mac, mac, 6); a.addr_type = 1; a.adv_type = 0; a.rssi = -60;
+    uint8_t p = 0;
+    a.payload[p++] = 2; a.payload[p++] = 0x01; a.payload[p++] = 0x06;
+    a.payload[p++] = 15; a.payload[p++] = 0xFF;                            // mfg data: Apple, offline-finding long form
+    a.payload[p++] = 0x4C; a.payload[p++] = 0x00; a.payload[p++] = 0x12; a.payload[p++] = 0x19;
+    for (int i = 0; i < 10; i++) a.payload[p++] = 0;
+    a.len = p;
+    Serial.printf("[inject] BLE advert, Apple 0x12/0x19 long form -> %s\n", scan_c6_inject_ble(a) ? "queued" : "queue full");
+}
+
+static void inject_wifi_tello() {
+    uint8_t f[96] = {0};
+    int p = 0;
+    f[p++] = 0x80; f[p++] = 0x00; p += 2;                                  // beacon, duration
+    for (int i = 0; i < 6; i++) f[p++] = 0xFF;                             // addr1: broadcast
+    static const uint8_t src[6] = {0x02, 0x11, 0x22, 0x33, 0x44, 0x55};
+    memcpy(&f[p], src, 6); p += 6;                                         // addr2
+    memcpy(&f[p], src, 6); p += 6;                                         // addr3
+    p += 2;                                                                // sequence
+    p += 8;                                                                // timestamp
+    f[p++] = 0x64; f[p++] = 0x00;                                          // beacon interval
+    f[p++] = 0x01; f[p++] = 0x04;                                          // capabilities
+    const char* ssid = "TELLO-TEST01";
+    f[p++] = 0; f[p++] = (uint8_t)strlen(ssid); memcpy(&f[p], ssid, strlen(ssid)); p += strlen(ssid);
+    f[p++] = 1; f[p++] = 1; f[p++] = 0x82;                                 // rates
+    f[p++] = 3; f[p++] = 1; f[p++] = 6;                                    // DS parameter set: channel 6
+    p += 4;                                                                // FCS
+    Serial.printf("[inject] WiFi beacon, SSID '%s' (%d bytes) -> %s\n", ssid, p,
+        scan_c6_inject_wifi(WIFI_PKT_MGMT, f, p, -50, 6) ? "queued" : "queue full");
+}
+
+
+void scan_c6_inject_demo(char which) {
+    if (which == '1') inject_ble_penguin();
+    else if (which == '2') inject_wifi_tello();
+    else if (which == '3') inject_ble_airtag();
 }
