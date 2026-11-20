@@ -6,6 +6,7 @@
 #include "hal/board.h"
 #include "sd_store.h"
 #include "signatures.h"     // CONF_ALERT_MIN
+#include "hal/display.h"    // display_bus_release / display_bus_restore
 
 #ifndef FW_VERSION
 #define FW_VERSION "v3.21-c6d"
@@ -22,13 +23,28 @@ static const char* const MAC_MODES[] = { "full", "oui", "none" };
 
 const char* sd_card_text() { return s_card; }
 
-bool sd_card_ok() {
-    if (s_mounted) return true;
-    if (s_tried && millis() - s_try_ms < 3000) return false;        // do not hammer an empty slot
+// Bus handover. The LCD driver (LovyanGFX) keeps SPI2 claimed, and the Arduino SD driver cannot mount the card while it does
+// (measured: SD.begin fails at every clock with the display running, and mounts first time without it). So every SD operation
+// is a session: the display lets go of the bus, the card is mounted, the I/O is done, the card is unmounted and the display
+// takes the bus back. A session costs a few tens of ms; alerts and exports are rare, so that is acceptable.
+// All sessions run in the UI task, which is the only task that draws.
+static bool open_session() {
+    if (!s_mounted && s_tried && millis() - s_try_ms < 3000) return false;   // do not hammer an empty slot
     s_tried = true;
     s_try_ms = millis();
+    display_bus_release();
     SPI.begin(PIN_SD_SCK, PIN_SD_MISO, PIN_SD_MOSI, PIN_SD_CS);
-    if (!SD.begin(PIN_SD_CS, SPI, 10000000) || SD.cardType() == CARD_NONE) {
+    static const uint32_t FREQ[] = { 10000000, 4000000 };   // second try for a card that is slow to start
+    bool ok = false;
+    for (size_t i = 0; i < sizeof(FREQ) / sizeof(FREQ[0]) && !ok; i++) {
+        bool b = SD.begin(PIN_SD_CS, SPI, FREQ[i]);
+        ok = b && SD.cardType() != CARD_NONE;
+        if (!ok) { Serial.printf("[sd] mount at %lu Hz failed (begin=%d)\n", (unsigned long)FREQ[i], b); SD.end(); }
+    }
+    if (!ok) {
+        SPI.end();
+        display_bus_restore();
+        s_mounted = false;
         snprintf(s_card, sizeof(s_card), "no card");
         return false;
     }
@@ -37,6 +53,21 @@ bool sd_card_ok() {
     s_mounted = true;
     return true;
 }
+
+static void close_session() {
+    SD.end();
+    SPI.end();
+    pinMode(PIN_SD_CS, OUTPUT); digitalWrite(PIN_SD_CS, HIGH);
+    display_bus_restore();
+}
+
+struct SdSession {
+    bool ok;
+    SdSession() : ok(open_session()) {}
+    ~SdSession() { if (ok) close_session(); }
+};
+
+bool sd_card_ok() { SdSession s; return s.ok; }   // a probe: mounts and unmounts
 
 // Text for a CSV cell or a JSON string: commas, quotes, backslashes and control characters become '_'.
 static void clean(char* out, size_t cap, const char* s) {
@@ -56,7 +87,8 @@ static int band_of(uint8_t proto) { return (proto & PROTO_WIFI) ? 2 : 0; }   // 
 // ── alerts.csv ───────────────────────────────────────────────────────────────
 // The device has no clock: boot_ms is milliseconds since this boot.
 void sd_log_alert(const Detection& d) {
-    if (!sd_card_ok()) { g_sd_stats.alerts_no_card++; return; }
+    SdSession ses;
+    if (!ses.ok) { g_sd_stats.alerts_no_card++; return; }
     const char* path = "/signalsweep/alerts.csv";
     bool fresh = !SD.exists(path);
     File f = SD.open(path, FILE_APPEND);
@@ -74,7 +106,8 @@ void sd_log_alert(const Detection& d) {
 }
 
 void sd_dump_alerts() {
-    if (!sd_card_ok()) { Serial.printf("[alerts] no card (%s)\n", sd_card_text()); return; }
+    SdSession ses;
+    if (!ses.ok) { Serial.printf("[alerts] no card (%s)\n", sd_card_text()); return; }
     File f = SD.open("/signalsweep/alerts.csv", FILE_READ);
     if (!f) { Serial.println("[alerts] no alerts.csv yet"); return; }
     Serial.printf("[alerts] --- begin (%lu bytes) ---\n", (unsigned long)f.size());
@@ -102,7 +135,8 @@ static void mac_text(char* out, size_t cap, const Detection& d, SdMacMode mode) 
 bool sd_list_export(const DetectionRegistry& reg, SdMacMode mode, const char* filter, char* msg, size_t msgsz) {
     int n = reg.count;
     if (n <= 0) { snprintf(msg, msgsz, "nothing to save"); return false; }
-    if (!sd_card_ok()) { snprintf(msg, msgsz, "no SD card"); return false; }
+    SdSession ses;
+    if (!ses.ok) { snprintf(msg, msgsz, "no SD card"); return false; }
     int k = 1;
     char csv[40], json[40];
     for (; k < 1000; k++) {

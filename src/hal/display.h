@@ -13,3 +13,8 @@ void display_init(Display& gfx, uint8_t brightness);
 
 // Set the backlight level (0..255) at any time after display_init(); used by alert patterns.
 void display_backlight(uint8_t level);
+
+// Shared SPI host (C6: LCD and TF slot on SPI2). release: the display driver lets go of the bus so another driver can
+// use it; restore: it takes the bus back. UI task only, never inside a drawing transaction. No-ops on the CYD.
+void display_bus_release();
+void display_bus_restore();

@@ -20,3 +20,5 @@ void display_init(Display& tft, uint8_t brightness) {
 }
 
 void display_backlight(uint8_t level) { ledcWrite(0, level); }
+void display_bus_release() {}   // CYD: LCD and TF slot are on separate SPI hosts
+void display_bus_restore() {}

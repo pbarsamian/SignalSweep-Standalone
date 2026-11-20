@@ -9,6 +9,8 @@
 #include <freertos/semphr.h>
 #include <esp_event.h>
 #include <esp_wifi.h>
+#include <SD.h>
+#include <SPI.h>
 
 #include "detection.h"
 #include "settings.h"
@@ -113,6 +115,17 @@ static void handle_char(char c) {
             bool on = !scan_c6_surveying();
             scan_c6_survey(on);
             Serial.printf("[cmd] frame-type survey %s (counts only; nothing is matched). 'i' prints the type counts\n", on ? "ON" : "off");
+            break;
+        }
+        case 'd': {   // diagnostic: mount the TF card with no display driver running (GPIO1 SCK, 2 MOSI, 3 MISO, 4 CS)
+            SPI.begin(1, 3, 2, 4);
+            static const uint32_t F[] = { 10000000, 4000000, 400000 };
+            for (size_t i = 0; i < 3; i++) {
+                bool b = SD.begin(4, SPI, F[i]);
+                Serial.printf("[sd-diag] %lu Hz: begin=%d cardType=%d size=%llu MB\n", (unsigned long)F[i], b, b ? SD.cardType() : -1, b ? SD.cardSize() / (1024ULL * 1024ULL) : 0ULL);
+                if (b) { SD.end(); break; }
+                SD.end();
+            }
             break;
         }
         case '1': case '2': case '3': scan_c6_inject_demo(c); break;

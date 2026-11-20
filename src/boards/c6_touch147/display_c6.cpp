@@ -18,3 +18,15 @@ void display_init(Display& gfx, uint8_t brightness) {
 }
 
 void display_backlight(uint8_t level) { if (s_gfx) s_gfx->setBrightness(level); }
+
+void display_bus_release() {
+    if (!s_gfx) return;
+    s_gfx->endWrite();
+    s_gfx->waitDMA();
+    static_cast<lgfx::Panel_Device*>(s_gfx->getPanel())->releaseBus();
+}
+
+void display_bus_restore() {
+    if (!s_gfx) return;
+    static_cast<lgfx::Panel_Device*>(s_gfx->getPanel())->initBus();
+}
