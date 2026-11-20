@@ -20,3 +20,14 @@ What Claude verified without a card or a meter: all four envs build (`cyd`, `c6s
 | 11 | Buzzer (optional) | only if you fit a passive buzzer on GPIO7 and flash `env:c6touch_buzzer`: SETTINGS > Buzzer, press `1` | tone per type; HUNT clicks | |
 
 Known and expected: no pcapng capture to SD yet (CAP page), no OTA (the CYD firmware has none), IMU not implemented (optional, off by default).
+
+## Results so far (2026-11-20, 7.4 GB SDHC card, board on COM14)
+| # | Result |
+|---|---|
+| 5 | `v` read 4122-4123 mV. Not compared with a meter. |
+| 6 | PASS. First attempt failed: LovyanGFX held SPI2 and SD.begin failed at every clock. Fixed with a per-operation bus handover (display_bus_release / restore). Card mounts, screen stays fine. |
+| 7 | PASS. `a` printed the header and 3 rows (camera, drone, tracker; conf 80; correct MACs, SSID, channel). |
+| 8 | PASS on screen: `list_001: 3 saved`. Files on the card not yet opened on a PC. |
+| 9 | Partial: screen fine and touch responsive with SD sessions. Long run with many alerts not done. |
+| 1-4, 10 | Not done. Note: Alert flash was OFF on the board (setting saved from an earlier tap); turn it ON for check 1. |
+Touch latency (found during this check): UI stalled after 2-3 gestures because serial log lines blocked the UI task once the USB TX buffer filled. Fixed with Serial.setTxTimeoutMs(0); Paul confirmed swipes fast.
