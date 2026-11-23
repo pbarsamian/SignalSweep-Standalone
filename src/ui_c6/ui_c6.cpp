@@ -367,8 +367,16 @@ static void detail_build(const DetectionRegistry& reg) {
 static uint32_t s_hunt_last_click = 0, s_hunt_last_pulse = 0;
 static bool     s_hunt_pulse = false;
 static int      s_hunt_peak = -128, s_hunt_prev = -128;
+#define HUNT_HIST 60                       // one sample per 500 ms = 30 s of history
+static int8_t   s_hunt_hist[HUNT_HIST];    // 0 = no sample
+static uint32_t s_hunt_hist_ms = 0, s_hunt_ts = 0;
+static float    s_hunt_ema = 0;            // smoothed RSSI, updated only when a new frame arrives
+static bool     s_hunt_dirty = true;
 
-static void hunt_reset() { s_hunt_peak = -128; s_hunt_prev = -128; s_hunt_pulse = false; }
+static void hunt_reset() {
+    s_hunt_peak = -128; s_hunt_prev = -128; s_hunt_pulse = false;
+    memset(s_hunt_hist, 0, sizeof(s_hunt_hist)); s_hunt_hist_ms = 0; s_hunt_ts = 0; s_hunt_ema = 0; s_hunt_dirty = true;
+}
 static void hunt_off()   { alert_all_off(); s_hunt_pulse = false; }
 
 // RSSI -> click/pulse interval. Closer = faster. -95 dBm ~1.2 s, -35 dBm ~70 ms (CYD values).
@@ -388,8 +396,20 @@ static void hunt_draw(bool force) {
     uint32_t now = millis();
     uint32_t age = now - s_dlast.timestamp_ms;
     bool live = !s_dgone && age < HUNT_SILENCE_MS;
-    int rssi = live ? s_dlast.rssi : -128;
+    int raw = live ? s_dlast.rssi : -128;
+    if (live && s_dlast.timestamp_ms != s_hunt_ts) {          // new frame: fold into the average (alpha 0.4)
+        s_hunt_ts = s_dlast.timestamp_ms;
+        s_hunt_ema = s_hunt_ema == 0 ? (float)raw : s_hunt_ema + 0.4f * (raw - s_hunt_ema);
+    }
+    if (!live) s_hunt_ema = 0;
+    int rssi = live ? (int)lroundf(s_hunt_ema) : -128;
     if (live && rssi > s_hunt_peak) s_hunt_peak = rssi;
+    if (now - s_hunt_hist_ms >= 500) {                        // push a history sample
+        s_hunt_hist_ms = now;
+        memmove(s_hunt_hist, s_hunt_hist + 1, HUNT_HIST - 1);
+        s_hunt_hist[HUNT_HIST - 1] = live ? (int8_t)rssi : 0;
+        s_hunt_dirty = true;
+    }
     if (live) {
         uint32_t iv = hunt_interval(rssi);
         if (now - s_hunt_last_pulse >= iv) {
@@ -428,8 +448,19 @@ static void hunt_draw(bool force) {
     if (s_dgone) snprintf(ls, sizeof(ls), "aged out ");
     else snprintf(ls, sizeof(ls), "%us ago  ", (unsigned)(age / 1000));
     txt(tft, ls, SCREEN_W - 8, CONT_Y + 42, 2, live ? LTGREY : RED, BLACK, lgfx::top_right);
-    txt(tft, "visual only", SCREEN_W - 8, CONT_Y + 66, 2, MDGREY, BLACK, lgfx::top_right);
-    (void)force;
+    char rw[20]; snprintf(rw, sizeof(rw), live ? "raw %d  " : "raw --  ", raw);
+    txt(tft, rw, SCREEN_W - 8, CONT_Y + 66, 2, MDGREY, BLACK, lgfx::top_right);
+    if (s_hunt_dirty || force) {                              // 30 s RSSI history strip under the ring
+        s_hunt_dirty = false;
+        const int sy = CONT_Y + 132, sh = 14, bw = 5;
+        tft.fillRect(0, sy, SCREEN_W, sh + 2, BLACK);
+        for (int i = 0; i < HUNT_HIST; i++) {
+            int v = s_hunt_hist[i];
+            if (!v) { tft.drawFastHLine(8 + i * bw, sy + sh - 1, bw - 1, BORDER); continue; }
+            int h = 1 + (int)(constrain((float)(v - HUNT_RSSI_FLOOR) / (HUNT_RSSI_CEIL - HUNT_RSSI_FLOOR), 0.0f, 1.0f) * (sh - 1));
+            tft.fillRect(8 + i * bw, sy + sh - h, bw - 1, h, hunt_heat(v));
+        }
+    }
 }
 
 // ── HOME page ─────────────────────────────────────────────────────────────────
