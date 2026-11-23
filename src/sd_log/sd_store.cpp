@@ -69,6 +69,16 @@ struct SdSession {
 
 bool sd_card_ok() { SdSession s; return s.ok; }   // a probe: mounts and unmounts
 
+bool sd_append_line(const char* path, const char* line) {
+    SdSession ses;
+    if (!ses.ok) return false;
+    File f = SD.open(path, FILE_APPEND);
+    if (!f) { s_mounted = false; return false; }
+    size_t w = f.printf("%s\r\n", line);
+    f.close();
+    return w > 0;
+}
+
 // Text for a CSV cell or a JSON string: commas, quotes, backslashes and control characters become '_'.
 static void clean(char* out, size_t cap, const char* s) {
     size_t j = 0;

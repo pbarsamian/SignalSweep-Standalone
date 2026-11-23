@@ -46,6 +46,12 @@ void scan_c6_start(const Settings& cfg);
 void scan_c6_set_mode(ScanMode m);
 ScanMode scan_c6_mode();
 
+// Hands both radios to an external, one-off owner (the opt-in TX module): the control task stops touching BLE/WiFi
+// state entirely until resumed, so it can never race a caller that is driving esp_wifi/NimBLE directly for AP mode
+// or raw TX. Resuming re-asserts a clean BLE-slot sweep (same as after any radio switch).
+void scan_c6_suspend(bool on);
+bool scan_c6_suspended();
+
 // Frame-type survey: widen the promiscuous filter to every type and only count (nothing is queued).
 void scan_c6_survey(bool on);
 bool scan_c6_surveying();

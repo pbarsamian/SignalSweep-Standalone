@@ -23,6 +23,9 @@
 #include "scan_c6/scan_c6.h"
 #include "hal/power.h"
 #include "sd_log/sd_store.h"
+#ifdef SS_TX_ENABLED
+#include "tx_c6/tx_c6.h"
+#endif
 
 #define UI_VERSION "v3.21-c6d"
 
@@ -45,8 +48,13 @@ static const uint16_t BLACK = 0x0000, WHITE = 0xFFFF, PANEL = 0x1082, PANEL2 = 0
 static const uint16_t TCOL[] = {0x3DFF, 0xFDA0, 0xF800, 0xF81F, 0xFD20, 0x4208};   // drone azure, tracker, camera, bodycam, attack, ?
 static const char* TNAME[] = {"Drone", "Tracker", "Camera", "BodyCam", "Attack", "?"};
 
+#ifdef SS_TX_ENABLED
+enum Page { P_HOME = 0, P_LIST, P_STATUS, P_SET, P_TX, P_COUNT };
+static const char* PAGE_NAME[P_COUNT] = {"HOME", "DETECTIONS", "STATUS", "SETTINGS", "TX TEST"};
+#else
 enum Page { P_HOME = 0, P_LIST, P_STATUS, P_SET, P_COUNT };
 static const char* PAGE_NAME[P_COUNT] = {"HOME", "DETECTIONS", "STATUS", "SETTINGS"};
+#endif
 enum DPage { DP_INFO = 0, DP_LINKS, DP_TRAFF, DP_HUNT, DP_COUNT };
 static const char* DP_NAME[DP_COUNT] = {"INFO", "LINKS", "TRAFFIC", "HUNT"};
 
@@ -668,6 +676,57 @@ static void settings_tap(int row, const DetectionRegistry& reg, Settings& s) {
                   s_sd_log, (it != SI_SDLOG && it != SI_SAVE && it != SI_MAC));
 }
 
+#ifdef SS_TX_ENABLED
+// ── TX TEST page (opt-in build only): Evil Portal + single-shot spoof, same row-list look as SETTINGS ───────────
+enum TxItem { TXI_PORTAL = 0, TXI_SPOOF_WIFI, TXI_SPOOF_BLE, TXI_COUNT };
+static char     s_tx_msg[48] = "";
+static uint32_t s_tx_msg_until = 0;
+
+static int  tx_rh(int) { return LIST_RH; }
+static void tx_draw(int row, const DetectionRegistry&) {
+    uint16_t bg = (row & 1) ? PANEL2 : PANEL;
+    char label[28] = "", val[40] = "";
+    bool on = false, is_toggle = false;
+    if (row == TXI_PORTAL) {
+        snprintf(label, sizeof(label), "Evil Portal");
+        on = tx_c6_portal_active(); is_toggle = true;
+        if (on) snprintf(val, sizeof(val), "%u captured", (unsigned)tx_c6_portal_hits());
+    } else if (row == TXI_SPOOF_WIFI) {
+        snprintf(label, sizeof(label), "Spoof WiFi (1 beacon)");
+        if (millis() < s_tx_msg_until) snprintf(val, sizeof(val), "%s", s_tx_msg); else snprintf(val, sizeof(val), "tap");
+    } else {
+        snprintf(label, sizeof(label), "Spoof BLE (3 s)");
+        if (millis() < s_tx_msg_until) snprintf(val, sizeof(val), "%s", s_tx_msg); else snprintf(val, sizeof(val), "tap");
+    }
+    rowspr.fillSprite(bg);
+    rowspr.fillRect(0, 0, 8, LIST_RH, RED);   // red stripe throughout: this page transmits
+    txt(rowspr, label, 18, LIST_RH / 2, 2, WHITE, bg, lgfx::middle_left);
+    if (is_toggle) {
+        uint16_t pc = on ? RED : BORDER;
+        rowspr.fillRoundRect(SCREEN_W - 70, 9, 58, 32, 10, pc);
+        txt(rowspr, on ? "ON" : "OFF", SCREEN_W - 41, LIST_RH / 2, 2, on ? WHITE : LTGREY, pc, lgfx::middle_center);
+        if (val[0]) txt(rowspr, val, SCREEN_W - 78, LIST_RH / 2, 2, MDGREY, bg, lgfx::middle_right);
+    } else {
+        fit(rowspr, val, 2, 150);
+        txt(rowspr, val, SCREEN_W - 14, LIST_RH / 2, 2, ACCENT, bg, lgfx::middle_right);
+    }
+}
+static RowList tx_rows() { return RowList{TXI_COUNT, tx_rh, tx_draw}; }
+
+static void tx_tap(int row) {
+    if (row == TXI_PORTAL) {
+        if (tx_c6_portal_active()) tx_c6_portal_stop(); else tx_c6_portal_start();
+    } else if (row == TXI_SPOOF_WIFI) {
+        tx_c6_spoof_wifi_once();
+        snprintf(s_tx_msg, sizeof(s_tx_msg), "sent"); s_tx_msg_until = millis() + 4000;
+    } else if (row == TXI_SPOOF_BLE) {
+        tx_c6_spoof_ble_once();
+        snprintf(s_tx_msg, sizeof(s_tx_msg), "sent"); s_tx_msg_until = millis() + 4000;
+    }
+    s_force = true;
+}
+#endif
+
 // ── Gesture handling ─────────────────────────────────────────────────────────
 static struct {
     bool down = false, vertical = false, horizontal = false, fired = false;   // fired: the page swipe already happened mid-gesture
@@ -685,6 +744,9 @@ static bool page_scrolls(const DetectionRegistry& reg) {
 
 static RowList active_rows(const DetectionRegistry& reg) {
     if (s_detail) return detail_rows();
+#ifdef SS_TX_ENABLED
+    if (s_page == P_TX) return tx_rows();
+#endif
     return s_page == P_SET ? set_rows() : list_rows(reg);
 }
 
@@ -722,6 +784,11 @@ static void on_tap(int tx, int ty, const DetectionRegistry& reg, Settings& s) {
     } else if (s_page == P_SET) {
         settings_tap(rows_hit(set_rows(), s_scroll, ty), reg, s);
     }
+#ifdef SS_TX_ENABLED
+    else if (s_page == P_TX) {
+        tx_tap(rows_hit(tx_rows(), s_scroll, ty));
+    }
+#endif
 }
 
 static void on_touch(const TouchEvent& e, const DetectionRegistry& reg, Settings& s) {
@@ -891,6 +958,11 @@ void ui_update(const DetectionRegistry& reg, Settings& s) {
                 rows_paint(L, s_scroll, reg);
             }
             break;
+#ifdef SS_TX_ENABLED
+        case P_TX:
+            if (force || now - s_page_ms >= 500) { s_page_ms = now; rows_paint(tx_rows(), s_scroll, reg); }
+            break;
+#endif
     }
 }
 

@@ -25,3 +25,6 @@ void sd_dump_alerts();                    // serial: print alerts.csv between ma
 
 // Writes /signalsweep/list_NNN.csv and .json (first free number). msg gets a short result for the screen.
 bool sd_list_export(const DetectionRegistry& reg, SdMacMode mode, const char* filter, char* msg, size_t msgsz);
+
+// Generic one-line append, its own session. path is relative to the card root (e.g. "/signalsweep/portal_log.txt").
+bool sd_append_line(const char* path, const char* line);

@@ -16,6 +16,9 @@
 #include "scan_c6/scan_c6.h"
 #include "hal/power.h"
 #include "sd_log/sd_store.h"
+#ifdef SS_TX_ENABLED
+#include "tx_c6/tx_c6.h"
+#endif
 
 #define FW_VERSION "v3.21-c6d"
 
@@ -46,6 +49,9 @@ static void ui_task(void*) {
         ui_update(snap, g_cfg);
         uint32_t du = micros() - t1; s_upd_sum_us += du; s_upd_n++; if (du > s_upd_max_us) s_upd_max_us = du;
         if (s_sd_dump_req) { s_sd_dump_req = false; sd_dump_alerts(); }
+#ifdef SS_TX_ENABLED
+        tx_c6_portal_poll();   // no-op unless the Evil Portal is running
+#endif
 
         int idx;
         while (xQueueReceive(g_queue, &idx, 0) == pdTRUE) {
@@ -80,6 +86,9 @@ void setup() {
     Serial.printf("[boot] default event loop: %s\n", e == ESP_OK ? "created" : esp_err_to_name(e));
     xTaskCreate(ui_task, "ui", 8192, nullptr, 2, nullptr);
     scan_c6_start(g_cfg);
+#ifdef SS_TX_ENABLED
+    tx_c6_init();
+#endif
 }
 
 void loop() {

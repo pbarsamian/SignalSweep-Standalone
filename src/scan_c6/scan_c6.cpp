@@ -48,6 +48,7 @@ static TaskHandle_t   s_worker_h, s_control_h;
 
 static volatile ScanMode s_mode = SCAN_SWEEP;
 static volatile bool     s_survey = false;
+static volatile bool     s_suspended = false;
 static bool              s_wifi_ready = false;
 static volatile bool     s_ble_active = true;
 static volatile uint8_t  s_channel = 0;
@@ -212,6 +213,7 @@ static void control_task(void*) {
     s_ble_active = true;
 
     for (;;) {
+        if (s_suspended) { vTaskDelay(pdMS_TO_TICKS(100)); continue; }   // an external owner (TX module) has both radios
         uint32_t now = millis();
         uint8_t want = g_focus.active ? g_focus.radio : FOCUS_NONE;
 
@@ -302,6 +304,19 @@ void scan_c6_survey(bool on) {
     esp_wifi_set_promiscuous_filter(&f);
 }
 bool scan_c6_surveying() { return s_survey; }
+
+void scan_c6_suspend(bool on) {
+    s_suspended = on;
+    if (!on) {
+        // An external owner (e.g. the TX module's Arduino WiFi AP) may have torn esp_wifi down entirely, so don't
+        // trust the promiscuous flag: resume in the BLE slot and mark WiFi as needing a full re-init, which the
+        // control task's normal slice-flip already does via scanner_wifi_init() the next time it wants WiFi.
+        s_wifi_ready = false;
+        ble_full_duty(false);
+        s_ble_active = true;
+    }
+}
+bool scan_c6_suspended() { return s_suspended; }
 
 bool scan_c6_inject_ble(const BleAdv& a) { return ble_enqueue(a); }
 bool scan_c6_inject_wifi(uint8_t type, const uint8_t* frame, int len, int rssi, int ch) {
